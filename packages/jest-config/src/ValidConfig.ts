@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import {Config} from '@jest/types';
+import type {Config} from '@jest/types';
 import {replacePathSepForRegex} from 'jest-regex-util';
 import {multipleValidOptions} from 'jest-validate';
 import {NODE_MODULES} from './constants';
@@ -15,11 +15,11 @@ const NODE_MODULES_REGEXP = replacePathSepForRegex(NODE_MODULES);
 const initialOptions: Config.InitialOptions = {
   automock: false,
   bail: multipleValidOptions(false, 0),
-  browser: false,
   cache: true,
   cacheDirectory: '/tmp/user/jest',
   changedFilesWithAncestor: false,
   changedSince: 'master',
+  ci: false,
   clearMocks: false,
   collectCoverage: true,
   collectCoverageFrom: ['src', '!public'],
@@ -28,6 +28,7 @@ const initialOptions: Config.InitialOptions = {
   },
   coverageDirectory: 'coverage',
   coveragePathIgnorePatterns: [NODE_MODULES_REGEXP],
+  coverageProvider: 'v8',
   coverageReporters: ['json', 'text', 'lcov', 'clover'],
   coverageThreshold: {
     global: {
@@ -38,12 +39,15 @@ const initialOptions: Config.InitialOptions = {
     },
   },
   dependencyExtractor: '<rootDir>/dependencyExtractor.js',
+  detectLeaks: false,
+  detectOpenHandles: false,
   displayName: multipleValidOptions('test-config', {
     color: 'blue',
     name: 'test-config',
   } as const),
   errorOnDeprecated: false,
   expand: false,
+  extensionsToTreatAsEsm: [],
   extraGlobals: [],
   filter: '<rootDir>/filter.js',
   forceCoverageMatch: ['**/*.t.js'],
@@ -54,13 +58,17 @@ const initialOptions: Config.InitialOptions = {
   haste: {
     computeSha1: true,
     defaultPlatform: 'ios',
+    enableSymlinks: false,
+    forceNodeFilesystemAPI: false,
     hasteImplModulePath: '<rootDir>/haste_impl.js',
+    hasteMapModulePath: '',
     platforms: ['ios', 'android'],
-    providesModuleNodeModules: ['react', 'react-native'],
     throwOnModuleCollision: false,
   },
+  injectGlobals: true,
   json: false,
   lastCommit: false,
+  listTests: false,
   logHeapUsage: true,
   maxConcurrency: 5,
   maxWorkers: '50%',
@@ -77,6 +85,8 @@ const initialOptions: Config.InitialOptions = {
   notify: false,
   notifyMode: 'failure-change',
   onlyChanged: false,
+  onlyFailures: false,
+  passWithNoTests: false,
   preset: 'react-native',
   prettierPath: '<rootDir>/node_modules/prettier',
   projects: ['project-a', 'project-b/'],
@@ -98,6 +108,7 @@ const initialOptions: Config.InitialOptions = {
   silent: true,
   skipFilter: false,
   skipNodeResolution: false,
+  slowTestThreshold: 5,
   snapshotResolver: '<rootDir>/snapshotResolver.js',
   snapshotSerializers: ['my-serializer-module'],
   testEnvironment: 'jest-environment-jsdom',
@@ -112,13 +123,13 @@ const initialOptions: Config.InitialOptions = {
     ['/__tests__/\\.test\\.[jt]sx?$', '/__tests__/\\.spec\\.[jt]sx?$'],
   ),
   testResultsProcessor: 'processor-node-module',
-  testRunner: 'jasmine2',
+  testRunner: 'circus',
   testSequencer: '@jest/test-sequencer',
   testTimeout: 5000,
   testURL: 'http://localhost',
   timers: 'real',
   transform: {
-    '^.+\\.js$': '<rootDir>/preprocessor.js',
+    '\\.js$': '<rootDir>/preprocessor.js',
   },
   transformIgnorePatterns: [NODE_MODULES_REGEXP],
   unmockedModulePathPatterns: ['mock'],
@@ -126,6 +137,7 @@ const initialOptions: Config.InitialOptions = {
   useStderr: false,
   verbose: false,
   watch: false,
+  watchAll: false,
   watchPathIgnorePatterns: ['<rootDir>/e2e/'],
   watchPlugins: [
     'path/to/yourWatchPlugin',

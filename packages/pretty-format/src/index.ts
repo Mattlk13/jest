@@ -5,16 +5,15 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import * as style from 'ansi-styles';
-import * as PrettyFormat from './types';
+/* eslint-disable local/ban-types-eventually */
 
+import style = require('ansi-styles');
 import {
   printIteratorEntries,
   printIteratorValues,
   printListItems,
   printObjectProperties,
 } from './collections';
-
 import AsymmetricMatcher from './plugins/AsymmetricMatcher';
 import ConvertAnsi from './plugins/ConvertAnsi';
 import DOMCollection from './plugins/DOMCollection';
@@ -22,23 +21,48 @@ import DOMElement from './plugins/DOMElement';
 import Immutable from './plugins/Immutable';
 import ReactElement from './plugins/ReactElement';
 import ReactTestComponent from './plugins/ReactTestComponent';
+import type {
+  Colors,
+  Config,
+  NewPlugin,
+  Options,
+  OptionsReceived,
+  Plugin,
+  Plugins,
+  Refs,
+  Theme,
+} from './types';
+
+export type {
+  Colors,
+  Config,
+  Options,
+  OptionsReceived,
+  OldPlugin,
+  NewPlugin,
+  Plugin,
+  Plugins,
+  Printer,
+  Refs,
+  Theme,
+} from './types';
 
 const toString = Object.prototype.toString;
 const toISOString = Date.prototype.toISOString;
 const errorToString = Error.prototype.toString;
 const regExpToString = RegExp.prototype.toString;
-const symbolToString = Symbol.prototype.toString;
 
 /**
  * Explicitly comparing typeof constructor to function avoids undefined as name
  * when mock identity-obj-proxy returns the key as the value for any key.
  */
-const getConstructorName = (val: new (...args: Array<any>) => any) =>
+const getConstructorName = (val: new (...args: Array<any>) => unknown) =>
   (typeof val.constructor === 'function' && val.constructor.name) || 'Object';
 
 /* global window */
 /** Is val is equal to global window object? Works even if it does not exist :) */
-const isWindow = (val: any) => typeof window !== 'undefined' && val === window;
+const isWindow = (val: unknown) =>
+  typeof window !== 'undefined' && val === window;
 
 const SYMBOL_REGEXP = /^Symbol\((.*)\)(.*)$/;
 const NEWLINE_REGEXP = /\n/gi;
@@ -84,7 +108,7 @@ function printFunction(val: Function, printFunctionName: boolean): string {
 }
 
 function printSymbol(val: symbol): string {
-  return symbolToString.call(val).replace(SYMBOL_REGEXP, 'Symbol($1)');
+  return String(val).replace(SYMBOL_REGEXP, 'Symbol($1)');
 }
 
 function printError(val: Error): string {
@@ -176,10 +200,10 @@ function printBasicValue(
  */
 function printComplexValue(
   val: any,
-  config: PrettyFormat.Config,
+  config: Config,
   indentation: string,
   depth: number,
-  refs: PrettyFormat.Refs,
+  refs: Refs,
   hasCalledToJSON?: boolean,
 ): string {
   if (refs.indexOf(val) !== -1) {
@@ -213,7 +237,11 @@ function printComplexValue(
   if (isToStringedArrayType(toStringed)) {
     return hitMaxDepth
       ? '[' + val.constructor.name + ']'
-      : (min ? '' : val.constructor.name + ' ') +
+      : (min
+          ? ''
+          : !config.printBasicPrototype && val.constructor.name === 'Array'
+          ? ''
+          : val.constructor.name + ' ') +
           '[' +
           printListItems(val, config, indentation, depth, refs, printer) +
           ']';
@@ -252,25 +280,27 @@ function printComplexValue(
   // For example, not even relevant if window is prop of React element.
   return hitMaxDepth || isWindow(val)
     ? '[' + getConstructorName(val) + ']'
-    : (min ? '' : getConstructorName(val) + ' ') +
+    : (min
+        ? ''
+        : !config.printBasicPrototype && getConstructorName(val) === 'Object'
+        ? ''
+        : getConstructorName(val) + ' ') +
         '{' +
         printObjectProperties(val, config, indentation, depth, refs, printer) +
         '}';
 }
 
-function isNewPlugin(
-  plugin: PrettyFormat.Plugin,
-): plugin is PrettyFormat.NewPlugin {
-  return (plugin as PrettyFormat.NewPlugin).serialize != null;
+function isNewPlugin(plugin: Plugin): plugin is NewPlugin {
+  return (plugin as NewPlugin).serialize != null;
 }
 
 function printPlugin(
-  plugin: PrettyFormat.Plugin,
+  plugin: Plugin,
   val: any,
-  config: PrettyFormat.Config,
+  config: Config,
   indentation: string,
   depth: number,
-  refs: PrettyFormat.Refs,
+  refs: Refs,
 ): string {
   let printed;
 
@@ -305,7 +335,7 @@ function printPlugin(
   return printed;
 }
 
-function findPlugin(plugins: PrettyFormat.Plugins, val: any) {
+function findPlugin(plugins: Plugins, val: unknown) {
   for (let p = 0; p < plugins.length; p++) {
     try {
       if (plugins[p].test(val)) {
@@ -320,11 +350,11 @@ function findPlugin(plugins: PrettyFormat.Plugins, val: any) {
 }
 
 function printer(
-  val: any,
-  config: PrettyFormat.Config,
+  val: unknown,
+  config: Config,
   indentation: string,
   depth: number,
-  refs: PrettyFormat.Refs,
+  refs: Refs,
   hasCalledToJSON?: boolean,
 ): string {
   const plugin = findPlugin(config.plugins, val);
@@ -352,7 +382,7 @@ function printer(
   );
 }
 
-const DEFAULT_THEME: PrettyFormat.Theme = {
+const DEFAULT_THEME: Theme = {
   comment: 'gray',
   content: 'reset',
   prop: 'yellow',
@@ -364,7 +394,7 @@ const DEFAULT_THEME_KEYS = Object.keys(DEFAULT_THEME) as Array<
   keyof typeof DEFAULT_THEME
 >;
 
-const DEFAULT_OPTIONS: PrettyFormat.Options = {
+const DEFAULT_OPTIONS: Options = {
   callToJSON: true,
   escapeRegex: false,
   escapeString: true,
@@ -373,11 +403,12 @@ const DEFAULT_OPTIONS: PrettyFormat.Options = {
   maxDepth: Infinity,
   min: false,
   plugins: [],
+  printBasicPrototype: true,
   printFunctionName: true,
   theme: DEFAULT_THEME,
 };
 
-function validateOptions(options: PrettyFormat.OptionsReceived) {
+function validateOptions(options: OptionsReceived) {
   Object.keys(options).forEach(key => {
     if (!DEFAULT_OPTIONS.hasOwnProperty(key)) {
       throw new Error(`pretty-format: Unknown option "${key}".`);
@@ -403,9 +434,7 @@ function validateOptions(options: PrettyFormat.OptionsReceived) {
   }
 }
 
-const getColorsHighlight = (
-  options: PrettyFormat.OptionsReceived,
-): PrettyFormat.Colors =>
+const getColorsHighlight = (options: OptionsReceived): Colors =>
   DEFAULT_THEME_KEYS.reduce((colors, key) => {
     const value =
       options.theme && options.theme[key] !== undefined
@@ -426,30 +455,28 @@ const getColorsHighlight = (
     return colors;
   }, Object.create(null));
 
-const getColorsEmpty = (): PrettyFormat.Colors =>
+const getColorsEmpty = (): Colors =>
   DEFAULT_THEME_KEYS.reduce((colors, key) => {
     colors[key] = {close: '', open: ''};
     return colors;
   }, Object.create(null));
 
-const getPrintFunctionName = (options?: PrettyFormat.OptionsReceived) =>
+const getPrintFunctionName = (options?: OptionsReceived) =>
   options && options.printFunctionName !== undefined
     ? options.printFunctionName
     : DEFAULT_OPTIONS.printFunctionName;
 
-const getEscapeRegex = (options?: PrettyFormat.OptionsReceived) =>
+const getEscapeRegex = (options?: OptionsReceived) =>
   options && options.escapeRegex !== undefined
     ? options.escapeRegex
     : DEFAULT_OPTIONS.escapeRegex;
 
-const getEscapeString = (options?: PrettyFormat.OptionsReceived) =>
+const getEscapeString = (options?: OptionsReceived) =>
   options && options.escapeString !== undefined
     ? options.escapeString
     : DEFAULT_OPTIONS.escapeString;
 
-const getConfig = (
-  options?: PrettyFormat.OptionsReceived,
-): PrettyFormat.Config => ({
+const getConfig = (options?: OptionsReceived): Config => ({
   callToJSON:
     options && options.callToJSON !== undefined
       ? options.callToJSON
@@ -477,6 +504,7 @@ const getConfig = (
     options && options.plugins !== undefined
       ? options.plugins
       : DEFAULT_OPTIONS.plugins,
+  printBasicPrototype: options?.printBasicPrototype ?? true,
   printFunctionName: getPrintFunctionName(options),
   spacingInner: options && options.min ? ' ' : '\n',
   spacingOuter: options && options.min ? '' : '\n',
@@ -491,10 +519,7 @@ function createIndent(indent: number): string {
  * @param val any potential JavaScript object
  * @param options Custom settings
  */
-function prettyFormat(
-  val: any,
-  options?: PrettyFormat.OptionsReceived,
-): string {
+export function format(val: unknown, options?: OptionsReceived): string {
   if (options) {
     validateOptions(options);
     if (options.plugins) {
@@ -518,7 +543,7 @@ function prettyFormat(
   return printComplexValue(val, getConfig(options), '', 0, []);
 }
 
-prettyFormat.plugins = {
+export const plugins = {
   AsymmetricMatcher,
   ConvertAnsi,
   DOMCollection,
@@ -528,17 +553,4 @@ prettyFormat.plugins = {
   ReactTestComponent,
 };
 
-/* eslint-disable-next-line no-redeclare */
-namespace prettyFormat {
-  export type Colors = PrettyFormat.Colors;
-  export type Config = PrettyFormat.Config;
-  export type Options = PrettyFormat.Options;
-  export type OptionsReceived = PrettyFormat.OptionsReceived;
-  export type NewPlugin = PrettyFormat.NewPlugin;
-  export type Plugin = PrettyFormat.Plugin;
-  export type Plugins = PrettyFormat.Plugins;
-  export type Refs = PrettyFormat.Refs;
-  export type Theme = PrettyFormat.Theme;
-}
-
-export = prettyFormat;
+export default format;

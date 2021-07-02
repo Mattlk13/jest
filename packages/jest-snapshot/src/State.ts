@@ -5,31 +5,31 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import * as fs from 'fs';
-import {Config} from '@jest/types';
-
+import * as fs from 'graceful-fs';
+import type {Config} from '@jest/types';
 import {getStackTraceLines, getTopFrame} from 'jest-message-util';
+import {InlineSnapshot, saveInlineSnapshots} from './InlineSnapshots';
+import type {SnapshotData} from './types';
 import {
+  addExtraLineBreaks,
   getSnapshotData,
   keyToTestName,
+  removeExtraLineBreaks,
+  removeLinesBeforeExternalMatcherTrap,
   saveSnapshotFile,
   serialize,
   testNameToKey,
-  unescape,
 } from './utils';
-import {InlineSnapshot, saveInlineSnapshots} from './inline_snapshots';
-import {SnapshotData} from './types';
 
 export type SnapshotStateOptions = {
   updateSnapshot: Config.SnapshotUpdateState;
-  getPrettier: () => null | any;
-  getBabelTraverse: () => Function;
+  prettierPath: Config.Path;
   expand?: boolean;
 };
 
 export type SnapshotMatchOptions = {
   testName: string;
-  received: any;
+  received: unknown;
   key?: string;
   inlineSnapshot?: string;
   isInline: boolean;
@@ -44,10 +44,15 @@ type SnapshotReturnOptions = {
   pass: boolean;
 };
 
+type SaveStatus = {
+  deleted: boolean;
+  saved: boolean;
+};
+
 export default class SnapshotState {
   private _counters: Map<string, number>;
   private _dirty: boolean;
-  // @ts-ignore
+  // @ts-expect-error
   private _index: number;
   private _updateSnapshot: Config.SnapshotUpdateState;
   private _snapshotData: SnapshotData;
@@ -55,8 +60,7 @@ export default class SnapshotState {
   private _snapshotPath: Config.Path;
   private _inlineSnapshots: Array<InlineSnapshot>;
   private _uncheckedKeys: Set<string>;
-  private _getBabelTraverse: () => Function;
-  private _getPrettier: () => null | any;
+  private _prettierPath: Config.Path;
 
   added: number;
   expand: boolean;
@@ -73,8 +77,7 @@ export default class SnapshotState {
     this._initialData = data;
     this._snapshotData = data;
     this._dirty = dirty;
-    this._getBabelTraverse = options.getBabelTraverse;
-    this._getPrettier = options.getPrettier;
+    this._prettierPath = options.prettierPath;
     this._inlineSnapshots = [];
     this._uncheckedKeys = new Set(Object.keys(this._snapshotData));
     this._counters = new Map();
@@ -87,7 +90,7 @@ export default class SnapshotState {
     this.updated = 0;
   }
 
-  markSnapshotsAsCheckedForTest(testName: string) {
+  markSnapshotsAsCheckedForTest(testName: string): void {
     this._uncheckedKeys.forEach(uncheckedKey => {
       if (keyToTestName(uncheckedKey) === testName) {
         this._uncheckedKeys.delete(uncheckedKey);
@@ -99,11 +102,13 @@ export default class SnapshotState {
     key: string,
     receivedSerialized: string,
     options: {isInline: boolean; error?: Error},
-  ) {
+  ): void {
     this._dirty = true;
     if (options.isInline) {
       const error = options.error || new Error();
-      const lines = getStackTraceLines(error.stack || '');
+      const lines = getStackTraceLines(
+        removeLinesBeforeExternalMatcherTrap(error.stack || ''),
+      );
       const frame = getTopFrame(lines);
       if (!frame) {
         throw new Error(
@@ -119,7 +124,7 @@ export default class SnapshotState {
     }
   }
 
-  clear() {
+  clear(): void {
     this._snapshotData = this._initialData;
     this._inlineSnapshots = [];
     this._counters = new Map();
@@ -130,12 +135,12 @@ export default class SnapshotState {
     this.updated = 0;
   }
 
-  save() {
+  save(): SaveStatus {
     const hasExternalSnapshots = Object.keys(this._snapshotData).length;
     const hasInlineSnapshots = this._inlineSnapshots.length;
     const isEmpty = !hasExternalSnapshots && !hasInlineSnapshots;
 
-    const status = {
+    const status: SaveStatus = {
       deleted: false,
       saved: false,
     };
@@ -145,9 +150,7 @@ export default class SnapshotState {
         saveSnapshotFile(this._snapshotData, this._snapshotPath);
       }
       if (hasInlineSnapshots) {
-        const prettier = this._getPrettier(); // Load lazily
-        const babelTraverse = this._getBabelTraverse(); // Load lazily
-        saveInlineSnapshots(this._inlineSnapshots, prettier, babelTraverse);
+        saveInlineSnapshots(this._inlineSnapshots, this._prettierPath);
       }
       status.saved = true;
     } else if (!hasExternalSnapshots && fs.existsSync(this._snapshotPath)) {
@@ -198,7 +201,7 @@ export default class SnapshotState {
       this._uncheckedKeys.delete(key);
     }
 
-    const receivedSerialized = serialize(received);
+    const receivedSerialized = addExtraLineBreaks(serialize(received));
     const expected = isInline ? inlineSnapshot : this._snapshotData[key];
     const pass = expected === receivedSerialized;
     const hasSnapshot = expected !== undefined;
@@ -253,9 +256,12 @@ export default class SnapshotState {
       if (!pass) {
         this.unmatched++;
         return {
-          actual: unescape(receivedSerialized),
+          actual: removeExtraLineBreaks(receivedSerialized),
           count,
-          expected: expected !== undefined ? unescape(expected) : undefined,
+          expected:
+            expected !== undefined
+              ? removeExtraLineBreaks(expected)
+              : undefined,
           key,
           pass: false,
         };
@@ -272,7 +278,7 @@ export default class SnapshotState {
     }
   }
 
-  fail(testName: string, _received: any, key?: string) {
+  fail(testName: string, _received: unknown, key?: string): string {
     this._counters.set(testName, (this._counters.get(testName) || 0) + 1);
     const count = Number(this._counters.get(testName));
 

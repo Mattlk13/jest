@@ -7,17 +7,16 @@
 
 import * as path from 'path';
 import {PassThrough} from 'stream';
-// ESLint doesn't know about this experimental module
-// eslint-disable-next-line import/no-unresolved
 import {Worker} from 'worker_threads';
 import mergeStream = require('merge-stream');
-
 import {
   CHILD_MESSAGE_INITIALIZE,
   ChildMessage,
+  OnCustomMessage,
   OnEnd,
   OnStart,
   PARENT_MESSAGE_CLIENT_ERROR,
+  PARENT_MESSAGE_CUSTOM,
   PARENT_MESSAGE_OK,
   PARENT_MESSAGE_SETUP_ERROR,
   ParentMessage,
@@ -32,6 +31,7 @@ export default class ExperimentalWorker implements WorkerInterface {
   private _request: ChildMessage | null;
   private _retries!: number;
   private _onProcessEnd!: OnEnd;
+  private _onCustomMessage!: OnCustomMessage;
 
   private _fakeStream: PassThrough | null;
   private _stdout: ReturnType<typeof mergeStream> | null;
@@ -58,9 +58,11 @@ export default class ExperimentalWorker implements WorkerInterface {
     this.initialize();
   }
 
-  initialize() {
+  initialize(): void {
     this._worker = new Worker(path.resolve(__dirname, './threadChild.js'), {
       eval: false,
+      // @ts-expect-error: added in newer versions
+      resourceLimits: this._options.resourceLimits,
       stderr: true,
       stdout: true,
       workerData: {
@@ -147,7 +149,7 @@ export default class ExperimentalWorker implements WorkerInterface {
 
         if (error != null && typeof error === 'object') {
           const extra = error;
-          // @ts-ignore: no index
+          // @ts-expect-error: no index
           const NativeCtor = global[response[1]];
           const Ctor = typeof NativeCtor === 'function' ? NativeCtor : Error;
 
@@ -156,7 +158,7 @@ export default class ExperimentalWorker implements WorkerInterface {
           error.stack = response[3];
 
           for (const key in extra) {
-            // @ts-ignore: no index
+            // @ts-expect-error: no index
             error[key] = extra[key];
           }
         }
@@ -166,11 +168,14 @@ export default class ExperimentalWorker implements WorkerInterface {
       case PARENT_MESSAGE_SETUP_ERROR:
         error = new Error('Error when calling setup: ' + response[2]);
 
-        // @ts-ignore: adding custom properties to errors.
+        // @ts-expect-error: adding custom properties to errors.
         error.type = response[1];
         error.stack = response[3];
 
         this._onProcessEnd(error, null);
+        break;
+      case PARENT_MESSAGE_CUSTOM:
+        this._onCustomMessage(response[1]);
         break;
       default:
         throw new TypeError('Unexpected response from worker: ' + response[0]);
@@ -189,23 +194,36 @@ export default class ExperimentalWorker implements WorkerInterface {
     }
   }
 
-  waitForExit() {
+  waitForExit(): Promise<void> {
     return this._exitPromise;
   }
 
-  forceExit() {
+  forceExit(): void {
     this._forceExited = true;
     this._worker.terminate();
   }
 
-  send(request: ChildMessage, onProcessStart: OnStart, onProcessEnd: OnEnd) {
+  send(
+    request: ChildMessage,
+    onProcessStart: OnStart,
+    onProcessEnd: OnEnd | null,
+    onCustomMessage: OnCustomMessage,
+  ): void {
     onProcessStart(this);
     this._onProcessEnd = (...args) => {
       // Clean the request to avoid sending past requests to workers that fail
       // while waiting for a new request (timers, unhandled rejections...)
       this._request = null;
-      return onProcessEnd(...args);
+
+      const res = onProcessEnd?.(...args);
+
+      // Clean up the reference so related closures can be garbage collected.
+      onProcessEnd = null;
+
+      return res;
     };
+
+    this._onCustomMessage = (...arg) => onCustomMessage(...arg);
 
     this._request = request;
     this._retries = 0;
@@ -213,7 +231,7 @@ export default class ExperimentalWorker implements WorkerInterface {
     this._worker.postMessage(request);
   }
 
-  getWorkerId() {
+  getWorkerId(): number {
     return this._options.workerId;
   }
 

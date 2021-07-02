@@ -5,16 +5,21 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import {Config, Global} from '@jest/types';
-import {Plugin} from 'pretty-format';
+import type {Config, Global} from '@jest/types';
 import {extractExpectedAssertionsErrors, getState, setState} from 'expect';
 import {
   SnapshotState,
+  SnapshotStateType,
   addSerializer,
   buildSnapshotResolver,
 } from 'jest-snapshot';
-import JasmineSpec, {Attributes, SpecResult} from './jasmine/Spec';
-import {Jasmine} from './types';
+import type {Plugin} from 'pretty-format';
+import type {
+  Attributes,
+  default as JasmineSpec,
+  SpecResult,
+} from './jasmine/Spec';
+import type {Jasmine} from './types';
 
 declare const global: Global.Global;
 
@@ -66,7 +71,7 @@ const patchJasmine = () => {
     class Spec extends realSpec {
       constructor(attr: Attributes) {
         const resultCallback = attr.resultCallback;
-        attr.resultCallback = function(result: SpecResult) {
+        attr.resultCallback = function (result: SpecResult) {
           addSuppressedErrors(result);
           addAssertionErrors(result);
           resultCallback.call(attr, result);
@@ -84,12 +89,12 @@ const patchJasmine = () => {
   })((global.jasmine as Jasmine).Spec);
 };
 
-export default ({
+export default async ({
   config,
   globalConfig,
   localRequire,
   testPath,
-}: SetupOptions) => {
+}: SetupOptions): Promise<SnapshotStateType> => {
   // Jest tests snapshotSerializers in order preceding built-in serializers.
   // Therefore, add in reverse because the last added is the first tested.
   config.snapshotSerializers
@@ -101,15 +106,15 @@ export default ({
 
   patchJasmine();
   const {expand, updateSnapshot} = globalConfig;
-  const snapshotResolver = buildSnapshotResolver(config);
+  const {prettierPath} = config;
+  const snapshotResolver = await buildSnapshotResolver(config, localRequire);
   const snapshotPath = snapshotResolver.resolveSnapshotPath(testPath);
   const snapshotState = new SnapshotState(snapshotPath, {
     expand,
-    getBabelTraverse: () => require('@babel/traverse').default,
-    getPrettier: () =>
-      config.prettierPath ? require(config.prettierPath) : null,
+    prettierPath,
     updateSnapshot,
   });
+  // @ts-expect-error: snapshotState is a jest extension of `expect`
   setState({snapshotState, testPath});
   // Return it back to the outer scope (test runner outside the VM).
   return snapshotState;

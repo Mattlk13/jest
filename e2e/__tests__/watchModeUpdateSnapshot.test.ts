@@ -5,8 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import * as path from 'path';
 import {tmpdir} from 'os';
+import * as path from 'path';
 import {wrap} from 'jest-snapshot-serializer-raw';
 import {cleanup, extractSummaries, writeFiles} from '../Utils';
 import runJest from '../runJest';
@@ -22,7 +22,7 @@ expect.addSnapshotSerializer({
   test: val => typeof val === 'string' && val.includes('[s[u'),
 });
 
-const setupFiles = input => {
+const setupFiles = (input: Array<{keys: Array<string>}>) => {
   writeFiles(DIR, {
     '__tests__/__snapshots__/bar.spec.js.snap': `// Jest Snapshot v1, https://goo.gl/fbAQLP
 

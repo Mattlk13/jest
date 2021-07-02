@@ -7,10 +7,11 @@
 
 import {tmpdir} from 'os';
 import * as path from 'path';
-import runJest from '../runJest';
 import {cleanup, writeFiles} from '../Utils';
+import runJest from '../runJest';
 
 const DIR = path.resolve(tmpdir(), 'unexpected-token');
+const nodeMajorVersion = Number(process.versions.node.split('.')[0]);
 
 beforeEach(() => cleanup(DIR));
 afterEach(() => cleanup(DIR));
@@ -50,7 +51,13 @@ test('triggers unexpected token error message for untranspiled node_modules', ()
   expect(stdout).toBe('');
   expect(stderr).toMatch(/Jest encountered an unexpected token/);
   expect(stderr).toMatch(/import {module}/);
-  expect(stderr).toMatch(/Unexpected token/);
+  if (nodeMajorVersion < 12) {
+    expect(stderr).toMatch(/Unexpected token/);
+  } else {
+    expect(stderr).toMatch(
+      /SyntaxError: Cannot use import statement outside a module/,
+    );
+  }
 });
 
 test('does not trigger unexpected token error message for regular syntax errors', () => {

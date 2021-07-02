@@ -7,6 +7,7 @@
 
 type ValueType =
   | 'array'
+  | 'bigint'
   | 'boolean'
   | 'function'
   | 'null'
@@ -22,7 +23,7 @@ type ValueType =
 
 // get the type of a value with handling the edge cases like `typeof []`
 // and `typeof null`
-function getType(value: unknown): ValueType {
+export function getType(value: unknown): ValueType {
   if (value === undefined) {
     return 'undefined';
   } else if (value === null) {
@@ -37,6 +38,8 @@ function getType(value: unknown): ValueType {
     return 'number';
   } else if (typeof value === 'string') {
     return 'string';
+  } else if (typeof value === 'bigint') {
+    return 'bigint';
   } else if (typeof value === 'object') {
     if (value != null) {
       if (value.constructor === RegExp) {
@@ -57,6 +60,4 @@ function getType(value: unknown): ValueType {
   throw new Error(`value of unknown type: ${value}`);
 }
 
-getType.isPrimitive = (value: unknown) => Object(value) !== value;
-
-export = getType;
+export const isPrimitive = (value: unknown): boolean => Object(value) !== value;

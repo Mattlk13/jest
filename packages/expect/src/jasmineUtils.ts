@@ -24,7 +24,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 /* eslint-disable */
 
-import {Tester} from './types';
+import type {Tester} from './types';
 
 // Extracted out of jasmine 2.5.2
 export function equals(
@@ -100,29 +100,29 @@ function eq(
     return false;
   }
   switch (className) {
-    // Strings, numbers, dates, and booleans are compared by value.
-    case '[object String]':
-      // Primitives and their corresponding object wrappers are equivalent; thus, `"5"` is
-      // equivalent to `new String("5")`.
-      return a == String(b);
-    case '[object Number]':
-      return Object.is(Number(a), Number(b));
-    case '[object Date]':
     case '[object Boolean]':
-      // Coerce dates and booleans to numeric primitive values. Dates are compared by their
+    case '[object String]':
+    case '[object Number]':
+      if (typeof a !== typeof b) {
+        // One is a primitive, one a `new Primitive()`
+        return false;
+      } else if (typeof a !== 'object' && typeof b !== 'object') {
+        // both are proper primitives
+        return Object.is(a, b);
+      } else {
+        // both are `new Primitive()`s
+        return Object.is(a.valueOf(), b.valueOf());
+      }
+    case '[object Date]':
+      // Coerce dates to numeric primitive values. Dates are compared by their
       // millisecond representations. Note that invalid dates with millisecond representations
       // of `NaN` are not equivalent.
       return +a == +b;
     // RegExps are compared by their source patterns and flags.
     case '[object RegExp]':
-      return (
-        a.source == b.source &&
-        a.global == b.global &&
-        a.multiline == b.multiline &&
-        a.ignoreCase == b.ignoreCase
-      );
+      return a.source === b.source && a.flags === b.flags;
   }
-  if (typeof a != 'object' || typeof b != 'object') {
+  if (typeof a !== 'object' || typeof b !== 'object') {
     return false;
   }
 
@@ -147,30 +147,19 @@ function eq(
   // Add the first object to the stack of traversed objects.
   aStack.push(a);
   bStack.push(b);
-  var size = 0;
   // Recursively compare objects and arrays.
   // Compare array lengths to determine if a deep comparison is necessary.
-  if (className == '[object Array]') {
-    size = a.length;
-    if (size !== b.length) {
-      return false;
-    }
-
-    while (size--) {
-      result = eq(a[size], b[size], aStack, bStack, customTesters, hasKey);
-      if (!result) {
-        return false;
-      }
-    }
+  if (className == '[object Array]' && a.length !== b.length) {
+    return false;
   }
 
   // Deep compare objects.
-  var aKeys = keys(a, className == '[object Array]', hasKey),
+  var aKeys = keys(a, hasKey),
     key;
-  size = aKeys.length;
+  var size = aKeys.length;
 
   // Ensure that both objects contain the same number of properties before comparing deep equality.
-  if (keys(b, className == '[object Array]', hasKey).length !== size) {
+  if (keys(b, hasKey).length !== size) {
     return false;
   }
 
@@ -193,43 +182,20 @@ function eq(
   return result;
 }
 
-function keys(
-  obj: object,
-  isArray: boolean,
-  hasKey: (obj: object, key: string) => boolean,
-) {
-  var allKeys = (function(o) {
-    var keys = [];
-    for (var key in o) {
-      if (hasKey(o, key)) {
-        keys.push(key);
-      }
-    }
-    return keys.concat(
-      (Object.getOwnPropertySymbols(o) as Array<any>).filter(
-        symbol =>
-          (Object.getOwnPropertyDescriptor(o, symbol) as PropertyDescriptor)
-            .enumerable,
-      ),
-    );
-  })(obj);
-
-  if (!isArray) {
-    return allKeys;
-  }
-
-  var extraKeys = [];
-  if (allKeys.length === 0) {
-    return allKeys;
-  }
-
-  for (var x = 0; x < allKeys.length; x++) {
-    if (typeof allKeys[x] === 'symbol' || !allKeys[x].match(/^[0-9]+$/)) {
-      extraKeys.push(allKeys[x]);
+function keys(obj: object, hasKey: (obj: object, key: string) => boolean) {
+  var keys = [];
+  for (var key in obj) {
+    if (hasKey(obj, key)) {
+      keys.push(key);
     }
   }
-
-  return extraKeys;
+  return keys.concat(
+    (Object.getOwnPropertySymbols(obj) as Array<any>).filter(
+      symbol =>
+        (Object.getOwnPropertyDescriptor(obj, symbol) as PropertyDescriptor)
+          .enumerable,
+    ),
+  );
 }
 
 function hasDefinedKey(obj: any, key: string) {

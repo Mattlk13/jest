@@ -5,8 +5,11 @@
  * LICENSE file in the root directory of this source tree.
  *
  */
-import {Config} from '@jest/types';
-import * as jestMatcherUtils from 'jest-matcher-utils';
+
+/* eslint-disable local/ban-types-eventually */
+
+import type {Config} from '@jest/types';
+import type * as jestMatcherUtils from 'jest-matcher-utils';
 import {INTERNAL_MATCHER_FLAG} from './jestMatchersObject';
 
 export type SyncExpectationResult = {
@@ -40,8 +43,10 @@ export type MatcherState = {
     strictCheck?: boolean,
   ) => boolean;
   expand?: boolean;
-  expectedAssertionsNumber?: number;
+  expectedAssertionsNumber?: number | null;
+  expectedAssertionsNumberError?: Error;
   isExpectingAssertions?: boolean;
+  isExpectingAssertionsError?: Error;
   isNot: boolean;
   promise: string;
   suppressedErrors: Array<Error>;
@@ -54,20 +59,21 @@ export type MatcherState = {
 
 export type AsymmetricMatcher = Record<string, any>;
 export type MatchersObject = {[id: string]: RawMatcherFn};
+export type ExpectedAssertionsErrors = Array<{
+  actual: string | number;
+  error: Error;
+  expected: string;
+}>;
 export type Expect = {
   <T = unknown>(actual: T): Matchers<T>;
   // TODO: this is added by test runners, not `expect` itself
   addSnapshotSerializer(arg0: any): void;
   assertions(arg0: number): void;
   extend(arg0: any): void;
-  extractExpectedAssertionsErrors: () => Array<{
-    actual: string | number;
-    error: Error;
-    expected: string;
-  }>;
+  extractExpectedAssertionsErrors: () => ExpectedAssertionsErrors;
   getState(): MatcherState;
   hasAssertions(): void;
-  setState(arg0: any): void;
+  setState(state: Partial<MatcherState>): void;
 
   any(expectedObject: any): AsymmetricMatcher;
   anything(): AsymmetricMatcher;
@@ -150,11 +156,11 @@ export interface Matchers<R> {
   /**
    * For comparing floating point numbers.
    */
-  toBeGreaterThan(expected: number): R;
+  toBeGreaterThan(expected: number | bigint): R;
   /**
    * For comparing floating point numbers.
    */
-  toBeGreaterThanOrEqual(expected: number): R;
+  toBeGreaterThanOrEqual(expected: number | bigint): R;
   /**
    * Ensure that an object is an instance of a class.
    * This matcher uses `instanceof` underneath.
@@ -163,11 +169,11 @@ export interface Matchers<R> {
   /**
    * For comparing floating point numbers.
    */
-  toBeLessThan(expected: number): R;
+  toBeLessThan(expected: number | bigint): R;
   /**
    * For comparing floating point numbers.
    */
-  toBeLessThanOrEqual(expected: number): R;
+  toBeLessThanOrEqual(expected: number | bigint): R;
   /**
    * This is the same as `.toBe(null)` but the error messages are a bit nicer.
    * So use `.toBeNull()` when you want to check that something is null.
@@ -304,7 +310,7 @@ export interface Matchers<R> {
   /* TODO: START snapshot matchers are not from `expect`, the types should not be here */
   /**
    * This ensures that a value matches the most recent snapshot with property matchers.
-   * Check out [the Snapshot Testing guide](https://jestjs.io/docs/en/snapshot-testing) for more information.
+   * Check out [the Snapshot Testing guide](https://jestjs.io/docs/snapshot-testing) for more information.
    */
   toMatchSnapshot<T extends {[P in keyof R]: unknown}>(
     propertyMatchers: Partial<T>,
@@ -312,13 +318,13 @@ export interface Matchers<R> {
   ): R;
   /**
    * This ensures that a value matches the most recent snapshot.
-   * Check out [the Snapshot Testing guide](https://jestjs.io/docs/en/snapshot-testing) for more information.
+   * Check out [the Snapshot Testing guide](https://jestjs.io/docs/snapshot-testing) for more information.
    */
   toMatchSnapshot(snapshotName?: string): R;
   /**
    * This ensures that a value matches the most recent snapshot with property matchers.
    * Instead of writing the snapshot value to a .snap file, it will be written into the source code automatically.
-   * Check out [the Snapshot Testing guide](https://jestjs.io/docs/en/snapshot-testing) for more information.
+   * Check out [the Snapshot Testing guide](https://jestjs.io/docs/snapshot-testing) for more information.
    */
   toMatchInlineSnapshot<T extends {[P in keyof R]: unknown}>(
     propertyMatchers: Partial<T>,
@@ -327,7 +333,7 @@ export interface Matchers<R> {
   /**
    * This ensures that a value matches the most recent snapshot with property matchers.
    * Instead of writing the snapshot value to a .snap file, it will be written into the source code automatically.
-   * Check out [the Snapshot Testing guide](https://jestjs.io/docs/en/snapshot-testing) for more information.
+   * Check out [the Snapshot Testing guide](https://jestjs.io/docs/snapshot-testing) for more information.
    */
   toMatchInlineSnapshot(snapshot?: string): R;
   /**

@@ -5,18 +5,26 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import chalk from 'chalk';
-import diffLinesUnified, {
+/* eslint-disable local/ban-types-eventually */
+
+import chalk = require('chalk');
+import {
   DIFF_DELETE,
   DIFF_EQUAL,
   DIFF_INSERT,
   Diff,
   DiffOptions as ImportDiffOptions,
+  diff as diffDefault,
   diffStringsRaw,
   diffStringsUnified,
 } from 'jest-diff';
-import getType = require('jest-get-type');
-import prettyFormat = require('pretty-format');
+import {getType, isPrimitive} from 'jest-get-type';
+import {
+  format as prettyFormat,
+  plugins as prettyFormatPlugins,
+} from 'pretty-format';
+import Replaceable from './Replaceable';
+import deepCyclicCopyReplaceable from './deepCyclicCopyReplaceable';
 
 const {
   AsymmetricMatcher,
@@ -25,7 +33,7 @@ const {
   Immutable,
   ReactElement,
   ReactTestComponent,
-} = prettyFormat.plugins;
+} = prettyFormatPlugins;
 
 const PLUGINS = [
   ReactTestComponent,
@@ -91,7 +99,7 @@ export const stringify = (object: unknown, maxDepth: number = 10): string => {
       min: true,
       plugins: PLUGINS,
     });
-  } catch (e) {
+  } catch {
     result = prettyFormat(object, {
       callToJSON: false,
       maxDepth,
@@ -113,16 +121,16 @@ export const highlightTrailingWhitespace = (text: string): string =>
 const replaceTrailingSpaces = (text: string): string =>
   text.replace(/\s+$/gm, spaces => SPACE_SYMBOL.repeat(spaces.length));
 
-export const printReceived = (object: unknown) =>
+export const printReceived = (object: unknown): string =>
   RECEIVED_COLOR(replaceTrailingSpaces(stringify(object)));
-export const printExpected = (value: unknown) =>
+export const printExpected = (value: unknown): string =>
   EXPECTED_COLOR(replaceTrailingSpaces(stringify(value)));
 
 export const printWithType = (
   name: string, // 'Expected' or 'Received'
   value: unknown,
   print: (value: unknown) => string, // printExpected or printReceived
-) => {
+): string => {
   const type = getType(value);
   const hasType =
     type !== 'null' && type !== 'undefined'
@@ -136,7 +144,7 @@ export const ensureNoExpected = (
   expected: unknown,
   matcherName: string,
   options?: MatcherHintOptions,
-) => {
+): void => {
   if (typeof expected !== 'undefined') {
     // Prepend maybe not only for backward compatibility.
     const matcherString = (options ? '' : '[.not]') + matcherName;
@@ -152,48 +160,57 @@ export const ensureNoExpected = (
   }
 };
 
+/**
+ * Ensures that `actual` is of type `number | bigint`
+ */
 export const ensureActualIsNumber = (
   actual: unknown,
   matcherName: string,
   options?: MatcherHintOptions,
-) => {
-  if (typeof actual !== 'number') {
+): void => {
+  if (typeof actual !== 'number' && typeof actual !== 'bigint') {
     // Prepend maybe not only for backward compatibility.
     const matcherString = (options ? '' : '[.not]') + matcherName;
     throw new Error(
       matcherErrorMessage(
         matcherHint(matcherString, undefined, undefined, options),
-        `${RECEIVED_COLOR('received')} value must be a number`,
+        `${RECEIVED_COLOR('received')} value must be a number or bigint`,
         printWithType('Received', actual, printReceived),
       ),
     );
   }
 };
 
+/**
+ * Ensures that `expected` is of type `number | bigint`
+ */
 export const ensureExpectedIsNumber = (
   expected: unknown,
   matcherName: string,
   options?: MatcherHintOptions,
-) => {
-  if (typeof expected !== 'number') {
+): void => {
+  if (typeof expected !== 'number' && typeof expected !== 'bigint') {
     // Prepend maybe not only for backward compatibility.
     const matcherString = (options ? '' : '[.not]') + matcherName;
     throw new Error(
       matcherErrorMessage(
         matcherHint(matcherString, undefined, undefined, options),
-        `${EXPECTED_COLOR('expected')} value must be a number`,
+        `${EXPECTED_COLOR('expected')} value must be a number or bigint`,
         printWithType('Expected', expected, printExpected),
       ),
     );
   }
 };
 
+/**
+ * Ensures that `actual` & `expected` are of type `number | bigint`
+ */
 export const ensureNumbers = (
   actual: unknown,
   expected: unknown,
   matcherName: string,
   options?: MatcherHintOptions,
-) => {
+): void => {
   ensureActualIsNumber(actual, matcherName, options);
   ensureExpectedIsNumber(expected, matcherName, options);
 };
@@ -202,7 +219,7 @@ export const ensureExpectedIsNonNegativeInteger = (
   expected: unknown,
   matcherName: string,
   options?: MatcherHintOptions,
-) => {
+): void => {
   if (
     typeof expected !== 'number' ||
     !Number.isSafeInteger(expected) ||
@@ -251,7 +268,7 @@ const isLineDiffable = (expected: unknown, received: unknown): boolean => {
     return false;
   }
 
-  if (getType.isPrimitive(expected)) {
+  if (isPrimitive(expected)) {
     // Print generic line diff for strings only:
     // * if neither string is empty
     // * if either string has more than one line
@@ -315,7 +332,11 @@ export const printDiffOrStringify = (
       return diffStringsUnified(expected, received, {
         aAnnotation: expectedLabel,
         bAnnotation: receivedLabel,
+        changeLineTrailingSpaceColor: chalk.bgYellow,
+        commonLineTrailingSpaceColor: chalk.bgYellow,
+        emptyFirstOrLastLinePlaceholder: '↵', // U+21B5
         expand,
+        includeChangeCounts: true,
       });
     }
 
@@ -338,10 +359,18 @@ export const printDiffOrStringify = (
   }
 
   if (isLineDiffable(expected, received)) {
-    const difference = diffLinesUnified(expected, received, {
+    const {replacedExpected, replacedReceived} =
+      replaceMatchedToAsymmetricMatcher(
+        deepCyclicCopyReplaceable(expected),
+        deepCyclicCopyReplaceable(received),
+        [],
+        [],
+      );
+    const difference = diffDefault(replacedExpected, replacedReceived, {
       aAnnotation: expectedLabel,
       bAnnotation: receivedLabel,
       expand,
+      includeChangeCounts: true,
     });
 
     if (
@@ -371,16 +400,82 @@ const shouldPrintDiff = (actual: unknown, expected: unknown) => {
   if (typeof actual === 'number' && typeof expected === 'number') {
     return false;
   }
+  if (typeof actual === 'bigint' && typeof expected === 'bigint') {
+    return false;
+  }
   if (typeof actual === 'boolean' && typeof expected === 'boolean') {
     return false;
   }
   return true;
 };
 
-export const diff = (a: any, b: any, options?: DiffOptions): string | null =>
-  shouldPrintDiff(a, b) ? diffLinesUnified(a, b, options) : null;
+function replaceMatchedToAsymmetricMatcher(
+  replacedExpected: unknown,
+  replacedReceived: unknown,
+  expectedCycles: Array<unknown>,
+  receivedCycles: Array<unknown>,
+) {
+  if (!Replaceable.isReplaceable(replacedExpected, replacedReceived)) {
+    return {replacedExpected, replacedReceived};
+  }
 
-export const pluralize = (word: string, count: number) =>
+  if (
+    expectedCycles.includes(replacedExpected) ||
+    receivedCycles.includes(replacedReceived)
+  ) {
+    return {replacedExpected, replacedReceived};
+  }
+
+  expectedCycles.push(replacedExpected);
+  receivedCycles.push(replacedReceived);
+
+  const expectedReplaceable = new Replaceable(replacedExpected);
+  const receivedReplaceable = new Replaceable(replacedReceived);
+
+  expectedReplaceable.forEach((expectedValue: unknown, key: unknown) => {
+    const receivedValue = receivedReplaceable.get(key);
+    if (isAsymmetricMatcher(expectedValue)) {
+      if (expectedValue.asymmetricMatch(receivedValue)) {
+        receivedReplaceable.set(key, expectedValue);
+      }
+    } else if (isAsymmetricMatcher(receivedValue)) {
+      if (receivedValue.asymmetricMatch(expectedValue)) {
+        expectedReplaceable.set(key, receivedValue);
+      }
+    } else if (Replaceable.isReplaceable(expectedValue, receivedValue)) {
+      const replaced = replaceMatchedToAsymmetricMatcher(
+        expectedValue,
+        receivedValue,
+        expectedCycles,
+        receivedCycles,
+      );
+      expectedReplaceable.set(key, replaced.replacedExpected);
+      receivedReplaceable.set(key, replaced.replacedReceived);
+    }
+  });
+
+  return {
+    replacedExpected: expectedReplaceable.object,
+    replacedReceived: receivedReplaceable.object,
+  };
+}
+
+type AsymmetricMatcher = {
+  asymmetricMatch: Function;
+};
+
+function isAsymmetricMatcher(data: any): data is AsymmetricMatcher {
+  const type = getType(data);
+  return type === 'object' && typeof data.asymmetricMatch === 'function';
+}
+
+export const diff = (
+  a: unknown,
+  b: unknown,
+  options?: DiffOptions,
+): string | null => (shouldPrintDiff(a, b) ? diffDefault(a, b, options) : null);
+
+export const pluralize = (word: string, count: number): string =>
   (NUMBERS[count] || count) + ' ' + word + (count === 1 ? '' : 's');
 
 // To display lines of labeled values as two columns with monospace alignment:
@@ -395,14 +490,18 @@ export const getLabelPrinter = (...strings: Array<string>): PrintLabel => {
     (max, string) => (string.length > max ? string.length : max),
     0,
   );
-  return string => `${string}: ${' '.repeat(maxLength - string.length)}`;
+  return (string: string): string =>
+    `${string}: ${' '.repeat(maxLength - string.length)}`;
 };
 
 export const matcherErrorMessage = (
   hint: string, // assertion returned from call to matcherHint
   generic: string, // condition which correct value must fulfill
-  specific: string, // incorrect value returned from call to printWithType
-) => `${hint}\n\n${chalk.bold('Matcher error')}: ${generic}\n\n${specific}`;
+  specific?: string, // incorrect value returned from call to printWithType
+): string =>
+  `${hint}\n\n${chalk.bold('Matcher error')}: ${generic}${
+    typeof specific === 'string' ? '\n\n' + specific : ''
+  }`;
 
 // Display assertion for the report when a test fails.
 // New format: rejects/resolves, not, and matcher name have black color
@@ -412,7 +511,7 @@ export const matcherHint = (
   received: string = 'received',
   expected: string = 'expected',
   options: MatcherHintOptions = {},
-) => {
+): string => {
   const {
     comment = '',
     expectedColor = EXPECTED_COLOR,
