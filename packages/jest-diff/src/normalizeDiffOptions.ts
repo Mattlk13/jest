@@ -5,9 +5,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import chalk from 'chalk';
+import chalk = require('chalk');
+import type {DiffOptions, DiffOptionsNormalized} from './types';
 
-import {DiffOptions, DiffOptionsNormalized} from './types';
+export const noColor = (string: string): string => string;
 
 const DIFF_CONTEXT_DEFAULT = 5;
 
@@ -18,12 +19,17 @@ const OPTIONS_DEFAULT: DiffOptionsNormalized = {
   bAnnotation: 'Received',
   bColor: chalk.red,
   bIndicator: '+',
+  changeColor: chalk.inverse,
+  changeLineTrailingSpaceColor: noColor,
   commonColor: chalk.dim,
   commonIndicator: ' ',
+  commonLineTrailingSpaceColor: noColor,
   contextLines: DIFF_CONTEXT_DEFAULT,
+  emptyFirstOrLastLinePlaceholder: '',
   expand: true,
   includeChangeCounts: false,
   omitAnnotationLines: false,
+  patchColor: chalk.yellow,
 };
 
 const getContextLines = (contextLines?: number): number =>

@@ -8,8 +8,9 @@
 import {tmpdir} from 'os';
 import * as path from 'path';
 import {wrap} from 'jest-snapshot-serializer-raw';
-import runJest from '../runJest';
+import {onNodeVersions} from '@jest/test-utils';
 import {cleanup, extractSummary, writeFiles} from '../Utils';
+import runJest from '../runJest';
 
 const DIR = path.resolve(tmpdir(), 'custom-reporters-test-dir');
 
@@ -121,6 +122,21 @@ describe('Custom Reporters Integration', () => {
     expect(wrap(stdout)).toMatchSnapshot();
   });
 
+  test('reporters can be default exports', () => {
+    const {stderr, stdout, exitCode} = runJest('custom-reporters', [
+      '--no-cache',
+      '--config',
+      JSON.stringify({
+        reporters: ['<rootDir>/reporters/DefaultExportReporter.js'],
+      }),
+      'add.test.js',
+    ]);
+
+    expect(stderr).toBe('');
+    expect(exitCode).toBe(0);
+    expect(wrap(stdout)).toMatchSnapshot();
+  });
+
   test('prints reporter errors', () => {
     writeFiles(DIR, {
       '__tests__/test.test.js': `test('test', () => {});`,
@@ -143,5 +159,30 @@ describe('Custom Reporters Integration', () => {
     const {stderr, exitCode} = runJest(DIR);
     expect(stderr).toMatch(/ON_RUN_START_ERROR/);
     expect(exitCode).toBe(1);
+  });
+
+  onNodeVersions('^12.17.0 || >=13.2.0', () => {
+    test('supports reporter written in ESM', () => {
+      writeFiles(DIR, {
+        '__tests__/test.test.js': `test('test', () => {});`,
+        'package.json': JSON.stringify({
+          jest: {
+            reporters: ['default', '<rootDir>/reporter.mjs'],
+            testEnvironment: 'node',
+          },
+        }),
+        'reporter.mjs': `
+        export default class Reporter {
+          onRunStart() {
+            throw new Error('ON_RUN_START_ERROR');
+          }
+        };
+      `,
+      });
+
+      const {stderr, exitCode} = runJest(DIR);
+      expect(stderr).toMatch(/ON_RUN_START_ERROR/);
+      expect(exitCode).toBe(1);
+    });
   });
 });

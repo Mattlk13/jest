@@ -3,7 +3,7 @@ id: jest-object
 title: The Jest Object
 ---
 
-The `jest` object is automatically in scope within every test file. The methods in the `jest` object help create mocks and let you control Jest's overall behavior.
+The `jest` object is automatically in scope within every test file. The methods in the `jest` object help create mocks and let you control Jest's overall behavior. It can also be imported explicitly by via `import {jest} from '@jest/globals'`.
 
 ## Mock Modules
 
@@ -49,7 +49,7 @@ test('original implementation', () => {
 
 This is usually useful when you have a scenario where the number of dependencies you want to mock is far less than the number of dependencies that you don't. For example, if you're writing a test for a module that uses a large number of dependencies that can be reasonably classified as "implementation details" of the module, then you likely do not want to mock them.
 
-Examples of dependencies that might be considered "implementation details" are things ranging from language built-ins (e.g. Array.prototype methods) to highly common utility methods (e.g. underscore/lo-dash, array utilities etc) and entire libraries like React.js.
+Examples of dependencies that might be considered "implementation details" are things ranging from language built-ins (e.g. Array.prototype methods) to highly common utility methods (e.g. underscore/lo-dash, array utilities, etc) and entire libraries like React.js.
 
 Returns the `jest` object for chaining.
 
@@ -76,7 +76,7 @@ export default {
 ```
 
 ```js
-// __tests__/disableAutomocking.js
+// __tests__/enableAutomocking.js
 jest.enableAutomock();
 
 import utils from '../utils';
@@ -90,7 +90,11 @@ test('original implementation', () => {
 
 _Note: this method was previously called `autoMockOn`. When using `babel-jest`, calls to `enableAutomock` will automatically be hoisted to the top of the code block. Use `autoMockOn` if you want to explicitly avoid this behavior._
 
-### `jest.genMockFromModule(moduleName)`
+### `jest.createMockFromModule(moduleName)`
+
+##### renamed in Jest **26.0.0+**
+
+Also under the alias: `.genMockFromModule(moduleName)`
 
 Given the name of a module, use the automatic mocking system to generate a mocked version of the module for you.
 
@@ -109,25 +113,25 @@ export default {
 ```
 
 ```js
-// __tests__/genMockFromModule.test.js
-const utils = jest.genMockFromModule('../utils').default;
+// __tests__/createMockFromModule.test.js
+const utils = jest.createMockFromModule('../utils').default;
 utils.isAuthorized = jest.fn(secret => secret === 'not wizard');
 
-test('implementation created by jest.genMockFromModule', () => {
+test('implementation created by jest.createMockFromModule', () => {
   expect(utils.authorize.mock).toBeTruthy();
   expect(utils.isAuthorized('not wizard')).toEqual(true);
 });
 ```
 
-This is how `genMockFromModule` will mock the following data types:
+This is how `createMockFromModule` will mock the following data types:
 
 #### `Function`
 
-Creates a new [mock function](https://jestjs.io/docs/en/mock-functions.html). The new function has no formal parameters and when called will return `undefined`. This functionality also applies to `async` functions.
+Creates a new [mock function](mock-functions). The new function has no formal parameters and when called will return `undefined`. This functionality also applies to `async` functions.
 
 #### `Class`
 
-Creates new class. The interface of the original class is maintained, all of the class member functions and properties will be mocked.
+Creates a new class. The interface of the original class is maintained, all of the class member functions and properties will be mocked.
 
 #### `Object`
 
@@ -143,22 +147,22 @@ Creates a new property with the same primitive value as the original property.
 
 Example:
 
-```
+```js
 // example.js
 module.exports = {
   function: function square(a, b) {
     return a * b;
   },
   asyncFunction: async function asyncSquare(a, b) {
-    const result = await a * b;
+    const result = (await a) * b;
     return result;
   },
-  class: new class Bar {
+  class: new (class Bar {
     constructor() {
       this.array = [1, 2, 3];
     }
     foo() {}
-  },
+  })(),
   object: {
     baz: 'foo',
     bar: {
@@ -176,7 +180,7 @@ module.exports = {
 
 ```js
 // __tests__/example.test.js
-const example = jest.genMockFromModule('./example');
+const example = jest.createMockFromModule('./example');
 
 test('should run example code', () => {
   // creates a new mocked function with no formal arguments.
@@ -366,7 +370,7 @@ Returns the `jest` object for chaining.
 
 Explicitly supplies the mock object that the module system should return for the specified module.
 
-On occasion there are times where the automatically generated mock the module system would normally provide you isn't adequate enough for your testing needs. Normally under those circumstances you should write a [manual mock](ManualMocks.md) that is more adequate for the module in question. However, on extremely rare occasions, even a manual mock isn't suitable for your purposes and you need to build the mock yourself inside your test.
+On occasion, there are times where the automatically generated mock the module system would normally provide you isn't adequate enough for your testing needs. Normally under those circumstances you should write a [manual mock](ManualMocks.md) that is more adequate for the module in question. However, on extremely rare occasions, even a manual mock isn't suitable for your purposes and you need to build the mock yourself inside your test.
 
 In these rare scenarios you can use this API to manually fill the slot in the module system's mock-module registry.
 
@@ -383,7 +387,7 @@ Example:
 ```js
 jest.mock('../myModule', () => {
   // Require the original module to not be mocked...
-  const originalModule = jest.requireActual(moduleName);
+  const originalModule = jest.requireActual('../myModule');
 
   return {
     __esModule: true, // Use it when dealing with esModules
@@ -469,7 +473,7 @@ Determines if the given function is a mocked function.
 
 ### `jest.spyOn(object, methodName)`
 
-Creates a mock function similar to `jest.fn` but also tracks calls to `object[methodName]`. Returns a Jest mock function.
+Creates a mock function similar to `jest.fn` but also tracks calls to `object[methodName]`. Returns a Jest [mock function](MockFunctionAPI.md).
 
 _Note: By default, `jest.spyOn` also calls the **spied** method. This is different behavior from most other test libraries. If you want to overwrite the original function, you can use `jest.spyOn(object, methodName).mockImplementation(() => customImplementation)` or `object[methodName] = jest.fn(() => customImplementation);`_
 
@@ -534,6 +538,7 @@ module.exports = audio;
 Example test:
 
 ```js
+const audio = require('./audio');
 const video = require('./video');
 
 test('plays video', () => {
@@ -545,8 +550,6 @@ test('plays video', () => {
 
   spy.mockRestore();
 });
-
-const audio = require('./audio');
 
 test('plays audio', () => {
   const spy = jest.spyOn(audio, 'volume', 'set'); // we pass 'set'
@@ -577,9 +580,11 @@ Restores all mocks back to their original value. Equivalent to calling [`.mockRe
 
 ## Mock timers
 
-### `jest.useFakeTimers()`
+### `jest.useFakeTimers(implementation?: 'modern' | 'legacy')`
 
-Instructs Jest to use fake versions of the standard timer functions (`setTimeout`, `setInterval`, `clearTimeout`, `clearInterval`, `nextTick`, `setImmediate` and `clearImmediate`).
+Instructs Jest to use fake versions of the standard timer functions (`setTimeout`, `setInterval`, `clearTimeout`, `clearInterval`, `nextTick`, `setImmediate` and `clearImmediate` as well as `Date`).
+
+If you pass `'legacy'` as an argument, Jest's legacy implementation will be used rather than one based on [`@sinonjs/fake-timers`](https://github.com/sinonjs/fake-timers).
 
 Returns the `jest` object for chaining.
 
@@ -607,15 +612,13 @@ This is often useful for synchronously executing setTimeouts during a test in or
 
 Exhausts all tasks queued by `setImmediate()`.
 
+> Note: This function is not available when using modern fake timers implementation
+
 ### `jest.advanceTimersByTime(msToRun)`
-
-##### renamed in Jest **22.0.0+**
-
-Also under the alias: `.runTimersToTime()`
 
 Executes only the macro task queue (i.e. all tasks queued by `setTimeout()` or `setInterval()` and `setImmediate()`).
 
-When this API is called, all timers are advanced by `msToRun` milliseconds. All pending "macro-tasks" that have been queued via `setTimeout()` or `setInterval()`, and would be executed within this time frame will be executed. Additionally if those macro-tasks schedule new macro-tasks that would be executed within the same time frame, those will be executed until there are no more macro-tasks remaining in the queue, that should be run within `msToRun` milliseconds.
+When this API is called, all timers are advanced by `msToRun` milliseconds. All pending "macro-tasks" that have been queued via `setTimeout()` or `setInterval()`, and would be executed within this time frame will be executed. Additionally, if those macro-tasks schedule new macro-tasks that would be executed within the same time frame, those will be executed until there are no more macro-tasks remaining in the queue, that should be run within `msToRun` milliseconds.
 
 ### `jest.runOnlyPendingTimers()`
 
@@ -639,15 +642,27 @@ This means, if any timers have been scheduled (but have not yet executed), they 
 
 Returns the number of fake timers still left to run.
 
+### `jest.setSystemTime(now?: number | Date)`
+
+Set the current system time used by fake timers. Simulates a user changing the system clock while your program is running. It affects the current time but it does not in itself cause e.g. timers to fire; they will fire exactly as they would have done without the call to `jest.setSystemTime()`.
+
+> Note: This function is only available when using modern fake timers implementation
+
+### `jest.getRealSystemTime()`
+
+When mocking time, `Date.now()` will also be mocked. If you for some reason need access to the real current time, you can invoke this function.
+
+> Note: This function is only available when using modern fake timers implementation
+
 ## Misc
 
 ### `jest.setTimeout(timeout)`
 
-Set the default timeout interval for tests and before/after hooks in milliseconds.
+Set the default timeout interval for tests and before/after hooks in milliseconds. This only affects the test file from which this function is called.
 
 _Note: The default timeout interval is 5 seconds if this method is not called._
 
-_Note: The method must be called after the test framework is installed in the environment and before the test runs. A good place to do this is in the `setupTestFrameworkScriptFile`._
+_Note: If you want to set the timeout for all test files, a good place to do this is in `setupFilesAfterEnv`._
 
 Example:
 
@@ -657,7 +672,7 @@ jest.setTimeout(1000); // 1 second
 
 ### `jest.retryTimes()`
 
-Runs failed tests n-times until they pass or until the max number of retries is exhausted. This only works with [jest-circus](https://github.com/facebook/jest/tree/master/packages/jest-circus)!
+Runs failed tests n-times until they pass or until the max number of retries is exhausted. This only works with the default [jest-circus](https://github.com/facebook/jest/tree/master/packages/jest-circus) runner!
 
 Example in a test:
 

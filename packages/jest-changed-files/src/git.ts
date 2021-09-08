@@ -8,9 +8,8 @@
 
 import * as path from 'path';
 import execa = require('execa');
-import {Config} from '@jest/types';
-
-import {SCMAdapter} from './types';
+import type {Config} from '@jest/types';
+import type {SCMAdapter} from './types';
 
 const findChangedFilesUsingCommand = async (
   args: Array<string>,
@@ -45,41 +44,54 @@ const adapter: SCMAdapter = {
 
     if (options && options.lastCommit) {
       return findChangedFilesUsingCommand(
-        ['show', '--name-only', '--pretty=format:', 'HEAD'].concat(
-          includePaths,
-        ),
-        cwd,
-      );
-    } else if (changedSince) {
-      const committed = await findChangedFilesUsingCommand(
-        [
-          'log',
-          '--name-only',
-          '--pretty=format:',
-          'HEAD',
-          `^${changedSince}`,
-        ].concat(includePaths),
-        cwd,
-      );
-      const staged = await findChangedFilesUsingCommand(
-        ['diff', '--cached', '--name-only'].concat(includePaths),
-        cwd,
-      );
-      const unstaged = await findChangedFilesUsingCommand(
-        ['ls-files', '--other', '--modified', '--exclude-standard'].concat(
-          includePaths,
-        ),
-        cwd,
-      );
-      return [...committed, ...staged, ...unstaged];
-    } else {
-      return findChangedFilesUsingCommand(
-        ['ls-files', '--other', '--modified', '--exclude-standard'].concat(
+        ['show', '--name-only', '--pretty=format:', 'HEAD', '--'].concat(
           includePaths,
         ),
         cwd,
       );
     }
+    if (changedSince) {
+      const [committed, staged, unstaged] = await Promise.all([
+        findChangedFilesUsingCommand(
+          ['diff', '--name-only', `${changedSince}...HEAD`, '--'].concat(
+            includePaths,
+          ),
+          cwd,
+        ),
+        findChangedFilesUsingCommand(
+          ['diff', '--cached', '--name-only', '--'].concat(includePaths),
+          cwd,
+        ),
+        findChangedFilesUsingCommand(
+          [
+            'ls-files',
+            '--other',
+            '--modified',
+            '--exclude-standard',
+            '--',
+          ].concat(includePaths),
+          cwd,
+        ),
+      ]);
+      return [...committed, ...staged, ...unstaged];
+    }
+    const [staged, unstaged] = await Promise.all([
+      findChangedFilesUsingCommand(
+        ['diff', '--cached', '--name-only', '--'].concat(includePaths),
+        cwd,
+      ),
+      findChangedFilesUsingCommand(
+        [
+          'ls-files',
+          '--other',
+          '--modified',
+          '--exclude-standard',
+          '--',
+        ].concat(includePaths),
+        cwd,
+      ),
+    ]);
+    return [...staged, ...unstaged];
   },
 
   getRoot: async cwd => {
@@ -89,7 +101,7 @@ const adapter: SCMAdapter = {
       const result = await execa('git', options, {cwd});
 
       return path.resolve(cwd, result.stdout);
-    } catch (e) {
+    } catch {
       return null;
     }
   },

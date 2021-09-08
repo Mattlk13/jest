@@ -6,10 +6,10 @@
  */
 
 export default (
-  globalToMutate: NodeJS.Global | Window,
+  globalToMutate: typeof globalThis,
   key: string,
   value: unknown,
-) => {
-  // @ts-ignore: no index
+): void => {
+  // @ts-expect-error: no index
   globalToMutate[key] = value;
 };

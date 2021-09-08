@@ -11,13 +11,13 @@ With the [Global Setup/Teardown](Configuration.md#globalsetup-string) and [Async
 
 [Jest Puppeteer](https://github.com/smooth-code/jest-puppeteer) provides all required configuration to run your tests using Puppeteer.
 
-1.  First install `jest-puppeteer`
+1.  First, install `jest-puppeteer`
 
 ```
 yarn add --dev jest-puppeteer
 ```
 
-2.  Specify preset in your Jest configuration:
+2.  Specify preset in your [Jest configuration](Configuration.md):
 
 ```json
 {
@@ -55,15 +55,15 @@ Here's an example of the GlobalSetup script
 
 ```js
 // setup.js
-const puppeteer = require('puppeteer');
-const mkdirp = require('mkdirp');
-const path = require('path');
-const fs = require('fs');
+const {writeFile} = require('fs').promises;
 const os = require('os');
+const path = require('path');
+const mkdirp = require('mkdirp');
+const puppeteer = require('puppeteer');
 
 const DIR = path.join(os.tmpdir(), 'jest_puppeteer_global_setup');
 
-module.exports = async function() {
+module.exports = async function () {
   const browser = await puppeteer.launch();
   // store the browser instance so we can teardown it later
   // this global is only available in the teardown but not in TestEnvironments
@@ -71,7 +71,7 @@ module.exports = async function() {
 
   // use the file system to expose the wsEndpoint for TestEnvironments
   mkdirp.sync(DIR);
-  fs.writeFileSync(path.join(DIR, 'wsEndpoint'), browser.wsEndpoint());
+  await writeFile(path.join(DIR, 'wsEndpoint'), browser.wsEndpoint());
 };
 ```
 
@@ -79,11 +79,11 @@ Then we need a custom Test Environment for puppeteer
 
 ```js
 // puppeteer_environment.js
-const NodeEnvironment = require('jest-environment-node');
-const fs = require('fs');
+const {readFile} = require('fs').promises;
+const os = require('os');
 const path = require('path');
 const puppeteer = require('puppeteer');
-const os = require('os');
+const NodeEnvironment = require('jest-environment-node');
 
 const DIR = path.join(os.tmpdir(), 'jest_puppeteer_global_setup');
 
@@ -95,7 +95,7 @@ class PuppeteerEnvironment extends NodeEnvironment {
   async setup() {
     await super.setup();
     // get the wsEndpoint
-    const wsEndpoint = fs.readFileSync(path.join(DIR, 'wsEndpoint'), 'utf8');
+    const wsEndpoint = await readFile(path.join(DIR, 'wsEndpoint'), 'utf8');
     if (!wsEndpoint) {
       throw new Error('wsEndpoint not found');
     }
@@ -110,24 +110,24 @@ class PuppeteerEnvironment extends NodeEnvironment {
     await super.teardown();
   }
 
-  runScript(script) {
-    return super.runScript(script);
+  getVmContext() {
+    return super.getVmContext();
   }
 }
 
 module.exports = PuppeteerEnvironment;
 ```
 
-Finally we can close the puppeteer instance and clean-up the file
+Finally, we can close the puppeteer instance and clean-up the file
 
 ```js
 // teardown.js
 const os = require('os');
-const rimraf = require('rimraf');
 const path = require('path');
+const rimraf = require('rimraf');
 
 const DIR = path.join(os.tmpdir(), 'jest_puppeteer_global_setup');
-module.exports = async function() {
+module.exports = async function () {
   // close the browser instance
   await global.__BROWSER_GLOBAL__.close();
 

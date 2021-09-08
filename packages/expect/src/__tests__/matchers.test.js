@@ -5,11 +5,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+const chalk = require('chalk');
+const Immutable = require('immutable');
+const {alignedAnsiStyleSerializer} = require('@jest/test-utils');
 const {stringify} = require('jest-matcher-utils');
 const jestExpect = require('../');
-const Immutable = require('immutable');
-const chalk = require('chalk');
 const chalkEnabled = chalk.enabled;
+
+expect.addSnapshotSerializer(alignedAnsiStyleSerializer);
 
 beforeAll(() => {
   chalk.enabled = true;
@@ -18,6 +21,9 @@ beforeAll(() => {
 afterAll(() => {
   chalk.enabled = chalkEnabled;
 });
+
+/* global BigInt */
+const isBigIntDefined = typeof BigInt === 'function';
 
 it('should throw if passed two arguments', () => {
   expect(() => jestExpect('foo', 'bar')).toThrow(
@@ -48,6 +54,12 @@ describe('.rejects', () => {
       throw new Error('some error');
     }
     await jestExpect(fn()).rejects.toThrow('some error');
+  });
+
+  it('should reject async function to toThrow', async () => {
+    await expect(async () => {
+      throw new Error('Test');
+    }).rejects.toThrow('Test');
   });
 
   ['a', [1], () => {}, {a: 1}].forEach(value => {
@@ -197,6 +209,11 @@ describe('.toBe()', () => {
     jestExpect(null).toBe(null);
     jestExpect(undefined).toBe(undefined);
     jestExpect(NaN).toBe(NaN);
+    if (isBigIntDefined) {
+      jestExpect(BigInt(1)).not.toBe(BigInt(2));
+      jestExpect(BigInt(1)).not.toBe(1);
+      jestExpect(BigInt(1)).toBe(BigInt(1));
+    }
   });
 
   [
@@ -206,7 +223,10 @@ describe('.toBe()', () => {
     [{}, {}],
     [{a: 1}, {a: 1}],
     [{a: 1}, {a: 5}],
-    [{a: () => {}, b: 2}, {a: expect.any(Function), b: 2}],
+    [
+      {a: () => {}, b: 2},
+      {a: expect.any(Function), b: 2},
+    ],
     [{a: undefined, b: 2}, {b: 2}],
     [new Date('2020-02-20'), new Date('2020-02-20')],
     [new Date('2020-02-21'), new Date('2020-02-20')],
@@ -227,11 +247,30 @@ describe('.toBe()', () => {
     });
   });
 
+  if (isBigIntDefined) {
+    [
+      [BigInt(1), BigInt(2)],
+      [{a: BigInt(1)}, {a: BigInt(1)}],
+    ].forEach(([a, b]) => {
+      it(`fails for: ${stringify(a)} and ${stringify(b)}`, () => {
+        expect(() => jestExpect(a).toBe(b)).toThrowError('toBe');
+      });
+    });
+  }
+
   [false, 1, 'a', undefined, null, {}, []].forEach(v => {
     it(`fails for '${stringify(v)}' with '.not'`, () => {
       expect(() => jestExpect(v).not.toBe(v)).toThrowErrorMatchingSnapshot();
     });
   });
+
+  if (isBigIntDefined) {
+    [BigInt(1), BigInt('1')].forEach(v => {
+      it(`fails for '${stringify(v)}' with '.not'`, () => {
+        expect(() => jestExpect(v).not.toBe(v)).toThrowError('toBe');
+      });
+    });
+  }
 
   it('does not crash on circular references', () => {
     const obj = {};
@@ -297,6 +336,11 @@ describe('.toStrictEqual()', () => {
 
   it('does not ignore keys with undefined values deep inside an object', () => {
     expect([{a: [{a: undefined}]}]).not.toStrictEqual([{a: [{}]}]);
+  });
+
+  it('does not consider holes as undefined in sparse arrays', () => {
+    // eslint-disable-next-line no-sparse-arrays
+    expect([, , , 1, , ,]).not.toStrictEqual([, , , 1, undefined, ,]);
   });
 
   it('passes when comparing same type', () => {
@@ -386,14 +430,78 @@ describe('.toStrictEqual()', () => {
 });
 
 describe('.toEqual()', () => {
+  /* eslint-disable no-new-wrappers */
   [
     [true, false],
     [1, 2],
     [0, -0],
     [0, Number.MIN_VALUE], // issues/7941
     [Number.MIN_VALUE, 0],
+    [0, new Number(0)],
+    [new Number(0), 0],
+    [new Number(0), new Number(1)],
+    ['abc', new String('abc')],
+    [new String('abc'), 'abc'],
+    [/abc/gsy, /abc/g],
     [{a: 1}, {a: 2}],
     [{a: 5}, {b: 6}],
+    [Object.freeze({foo: {bar: 1}}), {foo: {}}],
+    [
+      {
+        get getterAndSetter() {
+          return {};
+        },
+        set getterAndSetter(value) {
+          throw new Error('noo');
+        },
+      },
+      {getterAndSetter: {foo: 'bar'}},
+    ],
+    [
+      Object.freeze({
+        get frozenGetterAndSetter() {
+          return {};
+        },
+        set frozenGetterAndSetter(value) {
+          throw new Error('noo');
+        },
+      }),
+      {frozenGetterAndSetter: {foo: 'bar'}},
+    ],
+    [
+      {
+        get getter() {
+          return {};
+        },
+      },
+      {getter: {foo: 'bar'}},
+    ],
+    [
+      Object.freeze({
+        get frozenGetter() {
+          return {};
+        },
+      }),
+      {frozenGetter: {foo: 'bar'}},
+    ],
+    [
+      {
+        // eslint-disable-next-line accessor-pairs
+        set setter(value) {
+          throw new Error('noo');
+        },
+      },
+      {setter: {foo: 'bar'}},
+    ],
+    [
+      Object.freeze({
+        // eslint-disable-next-line accessor-pairs
+        set frozenSetter(value) {
+          throw new Error('noo');
+        },
+      }),
+      {frozenSetter: {foo: 'bar'}},
+    ],
     ['banana', 'apple'],
     ['1\u{00A0}234,57\u{00A0}$', '1 234,57 $'], // issues/6881
     [
@@ -402,7 +510,10 @@ describe('.toEqual()', () => {
     ],
     [null, undefined],
     [[1], [2]],
-    [[1, 2], [2, 1]],
+    [
+      [1, 2],
+      [2, 1],
+    ],
     [Immutable.List([1]), Immutable.List([2])],
     [Immutable.List([1, 2]), Immutable.List([2, 1])],
     [new Map(), new Set()],
@@ -417,7 +528,13 @@ describe('.toEqual()', () => {
     [Immutable.Set([1, 2]), Immutable.Set()],
     [Immutable.Set([1, 2]), Immutable.Set([1, 2, 3])],
     [Immutable.OrderedSet([1, 2]), Immutable.OrderedSet([2, 1])],
-    [new Map([[1, 'one'], [2, 'two']]), new Map([[1, 'one']])],
+    [
+      new Map([
+        [1, 'one'],
+        [2, 'two'],
+      ]),
+      new Map([[1, 'one']]),
+    ],
     [new Map([['a', 0]]), new Map([['b', 0]])],
     [new Map([['v', 1]]), new Map([['v', 2]])],
     [new Map([[['v'], 1]]), new Map([[['v'], 2]])],
@@ -428,17 +545,14 @@ describe('.toEqual()', () => {
     [Immutable.Map({a: 0}), Immutable.Map({b: 0})],
     [Immutable.Map({v: 1}), Immutable.Map({v: 2})],
     [
-      Immutable.OrderedMap()
-        .set(1, 'one')
-        .set(2, 'two'),
-      Immutable.OrderedMap()
-        .set(2, 'two')
-        .set(1, 'one'),
+      Immutable.OrderedMap().set(1, 'one').set(2, 'two'),
+      Immutable.OrderedMap().set(2, 'two').set(1, 'one'),
     ],
     [
       Immutable.Map({1: Immutable.Map({2: {a: 99}})}),
       Immutable.Map({1: Immutable.Map({2: {a: 11}})}),
     ],
+    [new Uint8Array([97, 98, 99]), new Uint8Array([97, 98, 100])],
     [{a: 1, b: 2}, jestExpect.objectContaining({a: 2})],
     [false, jestExpect.objectContaining({a: 2})],
     [[1, 3], jestExpect.arrayContaining([1, 2])],
@@ -479,6 +593,40 @@ describe('.toEqual()', () => {
         nodeType: 1,
       },
     ],
+    [
+      {
+        [Symbol.for('foo')]: 1,
+        [Symbol.for('bar')]: 2,
+      },
+      {
+        [Symbol.for('foo')]: jestExpect.any(Number),
+        [Symbol.for('bar')]: 1,
+      },
+    ],
+    [
+      // eslint-disable-next-line no-sparse-arrays
+      [, , 1, ,],
+      // eslint-disable-next-line no-sparse-arrays
+      [, , 2, ,],
+    ],
+    [
+      Object.assign([], {4294967295: 1}),
+      Object.assign([], {4294967295: 2}), // issue 11056
+    ],
+    [
+      // eslint-disable-next-line no-useless-computed-key
+      Object.assign([], {['-0']: 1}),
+      // eslint-disable-next-line no-useless-computed-key
+      Object.assign([], {['0']: 1}), // issue 11056: also check (-0, 0)
+    ],
+    [
+      Object.assign([], {a: 1}),
+      Object.assign([], {b: 1}), // issue 11056: also check strings
+    ],
+    [
+      Object.assign([], {[Symbol()]: 1}),
+      Object.assign([], {[Symbol()]: 1}), // issue 11056: also check symbols
+    ],
   ].forEach(([a, b]) => {
     test(`{pass: false} expect(${stringify(a)}).toEqual(${stringify(
       b,
@@ -488,21 +636,35 @@ describe('.toEqual()', () => {
     });
   });
 
+  if (isBigIntDefined) {
+    [
+      [BigInt(1), BigInt(2)],
+      [BigInt(1), 1],
+    ].forEach(([a, b]) => {
+      test(`{pass: false} expect(${stringify(a)}).toEqual(${stringify(
+        b,
+      )})`, () => {
+        expect(() => jestExpect(a).toEqual(b)).toThrowError('toEqual');
+        jestExpect(a).not.toEqual(b);
+      });
+    });
+  }
+
   [
     [true, true],
     [1, 1],
     [NaN, NaN],
-    // eslint-disable-next-line no-new-wrappers
-    [0, new Number(0)],
-    // eslint-disable-next-line no-new-wrappers
-    [new Number(0), 0],
+    [0, Number(0)],
+    [Number(0), 0],
+    [new Number(0), new Number(0)],
     ['abc', 'abc'],
-    // eslint-disable-next-line no-new-wrappers
-    [new String('abc'), 'abc'],
-    // eslint-disable-next-line no-new-wrappers
-    ['abc', new String('abc')],
+    [String('abc'), 'abc'],
+    ['abc', String('abc')],
     [[1], [1]],
-    [[1, 2], [1, 2]],
+    [
+      [1, 2],
+      [1, 2],
+    ],
     [Immutable.List([1]), Immutable.List([1])],
     [Immutable.List([1, 2]), Immutable.List([1, 2])],
     [{}, {}],
@@ -523,57 +685,98 @@ describe('.toEqual()', () => {
     [Immutable.OrderedSet(), Immutable.OrderedSet()],
     [Immutable.OrderedSet([1, 2]), Immutable.OrderedSet([1, 2])],
     [new Map(), new Map()],
-    [new Map([[1, 'one'], [2, 'two']]), new Map([[1, 'one'], [2, 'two']])],
-    [new Map([[1, 'one'], [2, 'two']]), new Map([[2, 'two'], [1, 'one']])],
     [
-      new Map([[[1], 'one'], [[2], 'two'], [[3], 'three'], [[3], 'four']]),
-      new Map([[[3], 'three'], [[3], 'four'], [[2], 'two'], [[1], 'one']]),
+      new Map([
+        [1, 'one'],
+        [2, 'two'],
+      ]),
+      new Map([
+        [1, 'one'],
+        [2, 'two'],
+      ]),
     ],
     [
-      new Map([[[1], new Map([[[1], 'one']])], [[2], new Map([[[2], 'two']])]]),
-      new Map([[[2], new Map([[[2], 'two']])], [[1], new Map([[[1], 'one']])]]),
+      new Map([
+        [1, 'one'],
+        [2, 'two'],
+      ]),
+      new Map([
+        [2, 'two'],
+        [1, 'one'],
+      ]),
     ],
     [
-      new Map([[[1], 'one'], [[2], 'two']]),
-      new Map([[[2], 'two'], [[1], 'one']]),
+      new Map([
+        [[1], 'one'],
+        [[2], 'two'],
+        [[3], 'three'],
+        [[3], 'four'],
+      ]),
+      new Map([
+        [[3], 'three'],
+        [[3], 'four'],
+        [[2], 'two'],
+        [[1], 'one'],
+      ]),
     ],
     [
-      new Map([[{a: 1}, 'one'], [{b: 2}, 'two']]),
-      new Map([[{b: 2}, 'two'], [{a: 1}, 'one']]),
+      new Map([
+        [[1], new Map([[[1], 'one']])],
+        [[2], new Map([[[2], 'two']])],
+      ]),
+      new Map([
+        [[2], new Map([[[2], 'two']])],
+        [[1], new Map([[[1], 'one']])],
+      ]),
     ],
     [
-      new Map([[1, ['one']], [2, ['two']]]),
-      new Map([[2, ['two']], [1, ['one']]]),
+      new Map([
+        [[1], 'one'],
+        [[2], 'two'],
+      ]),
+      new Map([
+        [[2], 'two'],
+        [[1], 'one'],
+      ]),
+    ],
+    [
+      new Map([
+        [{a: 1}, 'one'],
+        [{b: 2}, 'two'],
+      ]),
+      new Map([
+        [{b: 2}, 'two'],
+        [{a: 1}, 'one'],
+      ]),
+    ],
+    [
+      new Map([
+        [1, ['one']],
+        [2, ['two']],
+      ]),
+      new Map([
+        [2, ['two']],
+        [1, ['one']],
+      ]),
     ],
     [Immutable.Map(), Immutable.Map()],
     [
-      Immutable.Map()
-        .set(1, 'one')
-        .set(2, 'two'),
-      Immutable.Map()
-        .set(1, 'one')
-        .set(2, 'two'),
+      Immutable.Map().set(1, 'one').set(2, 'two'),
+      Immutable.Map().set(1, 'one').set(2, 'two'),
     ],
     [
-      Immutable.Map()
-        .set(1, 'one')
-        .set(2, 'two'),
-      Immutable.Map()
-        .set(2, 'two')
-        .set(1, 'one'),
+      Immutable.Map().set(1, 'one').set(2, 'two'),
+      Immutable.Map().set(2, 'two').set(1, 'one'),
     ],
     [
-      Immutable.OrderedMap()
-        .set(1, 'one')
-        .set(2, 'two'),
-      Immutable.OrderedMap()
-        .set(1, 'one')
-        .set(2, 'two'),
+      Immutable.OrderedMap().set(1, 'one').set(2, 'two'),
+      Immutable.OrderedMap().set(1, 'one').set(2, 'two'),
     ],
     [
       Immutable.Map({1: Immutable.Map({2: {a: 99}})}),
       Immutable.Map({1: Immutable.Map({2: {a: 99}})}),
     ],
+    [new Uint8Array([97, 98, 99]), new Uint8Array([97, 98, 99])],
     [{a: 1, b: 2}, jestExpect.objectContaining({a: 1})],
     [[1, 2, 3], jestExpect.arrayContaining([2, 3])],
     ['abcd', jestExpect.stringContaining('bc')],
@@ -610,6 +813,28 @@ describe('.toEqual()', () => {
         nodeType: 1,
       },
     ],
+    [
+      {
+        [Symbol.for('foo')]: 1,
+        [Symbol.for('bar')]: 2,
+      },
+      {
+        [Symbol.for('foo')]: jestExpect.any(Number),
+        [Symbol.for('bar')]: 2,
+      },
+    ],
+    [
+      // eslint-disable-next-line no-sparse-arrays
+      [, , 1, ,],
+      // eslint-disable-next-line no-sparse-arrays
+      [, , 1, ,],
+    ],
+    [
+      // eslint-disable-next-line no-sparse-arrays
+      [, , 1, , ,],
+      // eslint-disable-next-line no-sparse-arrays
+      [, , 1, undefined, ,], // same length but hole replaced by undefined
+    ],
   ].forEach(([a, b]) => {
     test(`{pass: true} expect(${stringify(a)}).not.toEqual(${stringify(
       b,
@@ -618,6 +843,28 @@ describe('.toEqual()', () => {
       expect(() => jestExpect(a).not.toEqual(b)).toThrowErrorMatchingSnapshot();
     });
   });
+
+  if (isBigIntDefined) {
+    [
+      [BigInt(1), BigInt(1)],
+      [BigInt(0), BigInt('0')],
+      [[BigInt(1)], [BigInt(1)]],
+      [
+        [BigInt(1), 2],
+        [BigInt(1), 2],
+      ],
+      [Immutable.List([BigInt(1)]), Immutable.List([BigInt(1)])],
+      [{a: BigInt(99)}, {a: BigInt(99)}],
+      [new Set([BigInt(1), BigInt(2)]), new Set([BigInt(1), BigInt(2)])],
+    ].forEach(([a, b]) => {
+      test(`{pass: true} expect(${stringify(a)}).not.toEqual(${stringify(
+        b,
+      )})`, () => {
+        jestExpect(a).toEqual(b);
+        expect(() => jestExpect(a).not.toEqual(b)).toThrowError('toEqual');
+      });
+    });
+  }
 
   test('assertion error matcherResult property contains matcher name, expected and actual values', () => {
     const actual = {a: 1};
@@ -723,6 +970,7 @@ describe('.toEqual()', () => {
       expect(d).not.toEqual(c);
     });
   });
+  /* eslint-enable */
 });
 
 describe('.toBeInstanceOf()', () => {
@@ -780,7 +1028,7 @@ describe('.toBeInstanceOf()', () => {
     [Object.create(null), A],
     [undefined, String],
     [null, String],
-    [/\w+/, function() {}],
+    [/\w+/, function () {}],
     [new DefinesNameProp(), RegExp],
   ].forEach(([a, b]) => {
     test(`failing ${stringify(a)} and ${stringify(b)}`, () => {
@@ -821,6 +1069,19 @@ describe('.toBeTruthy(), .toBeFalsy()', () => {
     });
   });
 
+  if (isBigIntDefined) {
+    [BigInt(1)].forEach(v => {
+      test(`'${stringify(v)}' is truthy`, () => {
+        jestExpect(v).toBeTruthy();
+        jestExpect(v).not.toBeFalsy();
+
+        expect(() => jestExpect(v).not.toBeTruthy()).toThrowError('toBeTruthy');
+
+        expect(() => jestExpect(v).toBeFalsy()).toThrowError('toBeFalsy');
+      });
+    });
+  }
+
   [false, null, NaN, 0, '', undefined].forEach(v => {
     test(`'${stringify(v)}' is falsy`, () => {
       jestExpect(v).toBeFalsy();
@@ -833,6 +1094,19 @@ describe('.toBeTruthy(), .toBeFalsy()', () => {
       ).toThrowErrorMatchingSnapshot();
     });
   });
+
+  if (isBigIntDefined) {
+    [BigInt(0)].forEach(v => {
+      test(`'${stringify(v)}' is falsy`, () => {
+        jestExpect(v).toBeFalsy();
+        jestExpect(v).not.toBeTruthy();
+
+        expect(() => jestExpect(v).toBeTruthy()).toThrowError('toBeTruthy');
+
+        expect(() => jestExpect(v).not.toBeFalsy()).toThrowError('toBeFalsy');
+      });
+    });
+  }
 });
 
 describe('.toBeNaN()', () => {
@@ -888,6 +1162,23 @@ describe('.toBeDefined(), .toBeUndefined()', () => {
       ).toThrowErrorMatchingSnapshot();
     });
   });
+
+  if (isBigIntDefined) {
+    [BigInt(1)].forEach(v => {
+      test(`'${stringify(v)}' is defined`, () => {
+        jestExpect(v).toBeDefined();
+        jestExpect(v).not.toBeUndefined();
+
+        expect(() => jestExpect(v).not.toBeDefined()).toThrowError(
+          'toBeDefined',
+        );
+
+        expect(() => jestExpect(v).toBeUndefined()).toThrowError(
+          'toBeUndefined',
+        );
+      });
+    });
+  }
 
   test('undefined is undefined', () => {
     jestExpect(undefined).toBeUndefined();
@@ -983,6 +1274,105 @@ describe(
       });
     });
 
+    if (isBigIntDefined) {
+      test('can compare BigInt to Numbers', () => {
+        const a = BigInt(2);
+        jestExpect(a).toBeGreaterThan(1);
+        jestExpect(a).toBeGreaterThanOrEqual(2);
+        jestExpect(2).toBeLessThanOrEqual(a);
+        jestExpect(a).toBeLessThan(3);
+        jestExpect(a).toBeLessThanOrEqual(2);
+      });
+
+      [
+        [BigInt(1), BigInt(2)],
+        [BigInt(0x11), BigInt(0x22)],
+        [-1, BigInt(2)],
+      ].forEach(([small, big]) => {
+        it(`{pass: true} expect(${stringify(small)}).toBeLessThan(${stringify(
+          big,
+        )})`, () => {
+          jestExpect(small).toBeLessThan(big);
+        });
+
+        it(`{pass: false} expect(${stringify(big)}).toBeLessThan(${stringify(
+          small,
+        )})`, () => {
+          jestExpect(big).not.toBeLessThan(small);
+        });
+
+        it(`{pass: true} expect(${stringify(big)}).toBeGreaterThan(${stringify(
+          small,
+        )})`, () => {
+          jestExpect(big).toBeGreaterThan(small);
+        });
+
+        it(`{pass: false} expect(${stringify(
+          small,
+        )}).toBeGreaterThan(${stringify(big)})`, () => {
+          jestExpect(small).not.toBeGreaterThan(big);
+        });
+
+        it(`{pass: true} expect(${stringify(
+          small,
+        )}).toBeLessThanOrEqual(${stringify(big)})`, () => {
+          jestExpect(small).toBeLessThanOrEqual(big);
+        });
+
+        it(`{pass: false} expect(${stringify(
+          big,
+        )}).toBeLessThanOrEqual(${stringify(small)})`, () => {
+          jestExpect(big).not.toBeLessThanOrEqual(small);
+        });
+
+        it(`{pass: true} expect(${stringify(
+          big,
+        )}).toBeGreaterThanOrEqual(${stringify(small)})`, () => {
+          jestExpect(big).toBeGreaterThanOrEqual(small);
+        });
+
+        it(`{pass: false} expect(${stringify(
+          small,
+        )}).toBeGreaterThanOrEqual(${stringify(big)})`, () => {
+          jestExpect(small).not.toBeGreaterThanOrEqual(big);
+        });
+
+        it(`throws: [${stringify(small)}, ${stringify(big)}]`, () => {
+          expect(() => jestExpect(small).toBeGreaterThan(big)).toThrowError(
+            'toBeGreaterThan',
+          );
+
+          expect(() => jestExpect(small).not.toBeLessThan(big)).toThrowError(
+            'toBeLessThan',
+          );
+
+          expect(() => jestExpect(big).not.toBeGreaterThan(small)).toThrowError(
+            'toBeGreaterThan',
+          );
+
+          expect(() => jestExpect(big).toBeLessThan(small)).toThrowError(
+            'toBeLessThan',
+          );
+
+          expect(() =>
+            jestExpect(small).toBeGreaterThanOrEqual(big),
+          ).toThrowError('toBeGreaterThanOrEqual');
+
+          expect(() =>
+            jestExpect(small).not.toBeLessThanOrEqual(big),
+          ).toThrowError('toBeLessThanOrEqual');
+
+          expect(() =>
+            jestExpect(big).not.toBeGreaterThanOrEqual(small),
+          ).toThrowError('toBeGreaterThanOrEqual');
+
+          expect(() => jestExpect(big).toBeLessThanOrEqual(small)).toThrowError(
+            'toBeLessThanOrEqual',
+          );
+        });
+      });
+    }
+
     [
       [1, 1],
       [Number.MIN_VALUE, Number.MIN_VALUE],
@@ -1003,6 +1393,26 @@ describe(
         ).toThrowErrorMatchingSnapshot();
       });
     });
+
+    if (isBigIntDefined) {
+      [
+        [BigInt(1), BigInt(1)],
+        [BigInt(Number.MAX_SAFE_INTEGER), BigInt(Number.MAX_SAFE_INTEGER)],
+      ].forEach(([n1, n2]) => {
+        test(`equal numbers: [${n1}, ${n2}]`, () => {
+          jestExpect(n1).toBeGreaterThanOrEqual(n2);
+          jestExpect(n1).toBeLessThanOrEqual(n2);
+
+          expect(() =>
+            jestExpect(n1).not.toBeGreaterThanOrEqual(n2),
+          ).toThrowError('toBeGreaterThanOrEqual');
+
+          expect(() => jestExpect(n1).not.toBeLessThanOrEqual(n2)).toThrowError(
+            'toBeLessThanOrEqual',
+          );
+        });
+      });
+    }
   },
 );
 
@@ -1052,6 +1462,21 @@ describe('.toContain(), .toContainEqual()', () => {
     });
   });
 
+  if (isBigIntDefined) {
+    [
+      [[BigInt(1), BigInt(2), BigInt(3), BigInt(4)], BigInt(1)],
+      [[1, 2, 3, BigInt(3), 4], BigInt(3)],
+    ].forEach(([list, v]) => {
+      it(`'${stringify(list)}' contains '${stringify(v)}'`, () => {
+        jestExpect(list).toContain(v);
+
+        expect(() => jestExpect(list).not.toContain(v)).toThrowError(
+          'toContain',
+        );
+      });
+    });
+  }
+
   [
     [[1, 2, 3], 4],
     [[null, undefined], 1],
@@ -1067,8 +1492,33 @@ describe('.toContain(), .toContainEqual()', () => {
     });
   });
 
+  if (isBigIntDefined) {
+    [[[BigInt(1), BigInt(2), BigInt(3)], 3]].forEach(([list, v]) => {
+      it(`'${stringify(list)}' does not contain '${stringify(v)}'`, () => {
+        jestExpect(list).not.toContain(v);
+
+        expect(() => jestExpect(list).toContain(v)).toThrowError('toContain');
+      });
+    });
+  }
+
   test('error cases', () => {
     expect(() => jestExpect(null).toContain(1)).toThrowErrorMatchingSnapshot();
+    expect(() => jestExpect('-0').toContain(-0)).toThrowErrorMatchingSnapshot();
+    expect(() =>
+      jestExpect('null').toContain(null),
+    ).toThrowErrorMatchingSnapshot();
+    expect(() =>
+      jestExpect('undefined').toContain(undefined),
+    ).toThrowErrorMatchingSnapshot();
+    expect(() =>
+      jestExpect('false').toContain(false),
+    ).toThrowErrorMatchingSnapshot();
+    if (isBigIntDefined) {
+      expect(() => jestExpect('1').toContain(BigInt(1))).toThrowError(
+        'toContain',
+      );
+    }
   });
 
   [
@@ -1147,7 +1597,10 @@ describe('.toBeCloseTo', () => {
     });
   });
 
-  [[3.141592e-7, 3e-7, 8], [56789, 51234, -4]].forEach(([n1, n2, p]) => {
+  [
+    [3.141592e-7, 3e-7, 8],
+    [56789, 51234, -4],
+  ].forEach(([n1, n2, p]) => {
     it(`{pass: false} expect(${n1}).toBeCloseTo(${n2}, ${p})`, () => {
       jestExpect(n1).not.toBeCloseTo(n2, p);
 
@@ -1157,17 +1610,20 @@ describe('.toBeCloseTo', () => {
     });
   });
 
-  [[0, 0.1, 0], [0, 0.0001, 3], [0, 0.000004, 5], [2.0000002, 2, 5]].forEach(
-    ([n1, n2, p]) => {
-      it(`{pass: true} expect(${n1}).toBeCloseTo(${n2}, ${p})`, () => {
-        jestExpect(n1).toBeCloseTo(n2, p);
+  [
+    [0, 0.1, 0],
+    [0, 0.0001, 3],
+    [0, 0.000004, 5],
+    [2.0000002, 2, 5],
+  ].forEach(([n1, n2, p]) => {
+    it(`{pass: true} expect(${n1}).toBeCloseTo(${n2}, ${p})`, () => {
+      jestExpect(n1).toBeCloseTo(n2, p);
 
-        expect(() =>
-          jestExpect(n1).not.toBeCloseTo(n2, p),
-        ).toThrowErrorMatchingSnapshot();
-      });
-    },
-  );
+      expect(() =>
+        jestExpect(n1).not.toBeCloseTo(n2, p),
+      ).toThrowErrorMatchingSnapshot();
+    });
+  });
 
   describe('throws: Matcher error', () => {
     test('promise empty isNot false received', () => {
@@ -1224,7 +1680,10 @@ describe('.toBeCloseTo', () => {
 });
 
 describe('.toMatch()', () => {
-  [['foo', 'foo'], ['Foo bar', /^foo/i]].forEach(([n1, n2]) => {
+  [
+    ['foo', 'foo'],
+    ['Foo bar', /^foo/i],
+  ].forEach(([n1, n2]) => {
     it(`{pass: true} expect(${n1}).toMatch(${n2})`, () => {
       jestExpect(n1).toMatch(n2);
 
@@ -1234,7 +1693,10 @@ describe('.toMatch()', () => {
     });
   });
 
-  [['bar', 'foo'], ['bar', /foo/]].forEach(([n1, n2]) => {
+  [
+    ['bar', 'foo'],
+    ['bar', /foo/],
+  ].forEach(([n1, n2]) => {
     it(`throws: [${n1}, ${n2}]`, () => {
       expect(() => jestExpect(n1).toMatch(n2)).toThrowErrorMatchingSnapshot();
     });
@@ -1278,34 +1740,50 @@ describe('.toMatch()', () => {
   it('escapes strings properly', () => {
     jestExpect('this?: throws').toMatch('this?: throws');
   });
+
+  it('does not maintain RegExp state between calls', () => {
+    const regex = /[f]\d+/gi;
+    jestExpect('f123').toMatch(regex);
+    jestExpect('F456').toMatch(regex);
+    jestExpect(regex.lastIndex).toBe(0);
+  });
 });
 
 describe('.toHaveLength', () => {
-  [[[1, 2], 2], [[], 0], [['a', 'b'], 2], ['abc', 3], ['', 0]].forEach(
-    ([received, length]) => {
-      test(`{pass: true} expect(${stringify(
-        received,
-      )}).toHaveLength(${length})`, () => {
-        jestExpect(received).toHaveLength(length);
-        expect(() =>
-          jestExpect(received).not.toHaveLength(length),
-        ).toThrowErrorMatchingSnapshot();
-      });
-    },
-  );
+  [
+    [[1, 2], 2],
+    [[], 0],
+    [['a', 'b'], 2],
+    ['abc', 3],
+    ['', 0],
+    [() => {}, 0],
+  ].forEach(([received, length]) => {
+    test(`{pass: true} expect(${stringify(
+      received,
+    )}).toHaveLength(${length})`, () => {
+      jestExpect(received).toHaveLength(length);
+      expect(() =>
+        jestExpect(received).not.toHaveLength(length),
+      ).toThrowErrorMatchingSnapshot();
+    });
+  });
 
-  [[[1, 2], 3], [[], 1], [['a', 'b'], 99], ['abc', 66], ['', 1]].forEach(
-    ([received, length]) => {
-      test(`{pass: false} expect(${stringify(
-        received,
-      )}).toHaveLength(${length})`, () => {
-        jestExpect(received).not.toHaveLength(length);
-        expect(() =>
-          jestExpect(received).toHaveLength(length),
-        ).toThrowErrorMatchingSnapshot();
-      });
-    },
-  );
+  [
+    [[1, 2], 3],
+    [[], 1],
+    [['a', 'b'], 99],
+    ['abc', 66],
+    ['', 1],
+  ].forEach(([received, length]) => {
+    test(`{pass: false} expect(${stringify(
+      received,
+    )}).toHaveLength(${length})`, () => {
+      jestExpect(received).not.toHaveLength(length);
+      expect(() =>
+        jestExpect(received).toHaveLength(length),
+      ).toThrowErrorMatchingSnapshot();
+    });
+  });
 
   test('error cases', () => {
     expect(() =>
@@ -1368,6 +1846,7 @@ describe('.toHaveProperty()', () => {
     get b() {
       return 'b';
     }
+    // eslint-disable-next-line accessor-pairs
     set setter(val) {
       this.val = val;
     }
@@ -1386,7 +1865,7 @@ describe('.toHaveProperty()', () => {
   }
   E.prototype.nodeType = 1;
 
-  const memoized = function() {};
+  const memoized = function () {};
   memoized.memo = [];
 
   const pathDiff = ['children', 0];
@@ -1536,6 +2015,22 @@ describe('toMatchObject()', () => {
     }
   }
 
+  class Sub extends Foo {
+    get c() {
+      return 'c';
+    }
+  }
+
+  const withDefineProperty = (obj, key, val) => {
+    Object.defineProperty(obj, key, {
+      get() {
+        return val;
+      },
+    });
+
+    return obj;
+  };
+
   const testNotToMatchSnapshots = tuples => {
     tuples.forEach(([n1, n2]) => {
       it(`{pass: true} expect(${stringify(n1)}).toMatchObject(${stringify(
@@ -1622,8 +2117,14 @@ describe('toMatchObject()', () => {
 
   testNotToMatchSnapshots([
     [{a: 'b', c: 'd'}, {a: 'b'}],
-    [{a: 'b', c: 'd'}, {a: 'b', c: 'd'}],
-    [{a: 'b', t: {x: {r: 'r'}, z: 'z'}}, {a: 'b', t: {z: 'z'}}],
+    [
+      {a: 'b', c: 'd'},
+      {a: 'b', c: 'd'},
+    ],
+    [
+      {a: 'b', t: {x: {r: 'r'}, z: 'z'}},
+      {a: 'b', t: {z: 'z'}},
+    ],
     [{a: 'b', t: {x: {r: 'r'}, z: 'z'}}, {t: {x: {r: 'r'}}}],
     [{a: [3, 4, 5], b: 'b'}, {a: [3, 4, 5]}],
     [{a: [3, 4, 5, 'v'], b: 'b'}, {a: [3, 4, 5, 'v']}],
@@ -1636,27 +2137,53 @@ describe('toMatchObject()', () => {
     [{a: null, b: 'b'}, {a: null}],
     [{a: undefined, b: 'b'}, {a: undefined}],
     [{a: [{a: 'a', b: 'b'}]}, {a: [{a: 'a'}]}],
-    [[1, 2], [1, 2]],
+    [
+      [1, 2],
+      [1, 2],
+    ],
     [{a: undefined}, {a: undefined}],
     [[], []],
     [new Error('foo'), new Error('foo')],
     [new Error('bar'), {message: 'bar'}],
     [new Foo(), {a: undefined, b: 'b'}],
     [Object.assign(Object.create(null), {a: 'b'}), {a: 'b'}],
+    [
+      {a: 'b', c: 'd', [Symbol.for('jest')]: 'jest'},
+      {a: 'b', [Symbol.for('jest')]: 'jest'},
+    ],
+    [
+      {a: 'b', c: 'd', [Symbol.for('jest')]: 'jest'},
+      {a: 'b', c: 'd', [Symbol.for('jest')]: 'jest'},
+    ],
+    // These snapshots will show {} as the object because the properties
+    // are not enumerable. We will need to somehow make the serialization of
+    // these keys a little smarter before reporting accurately.
+    [new Sub(), {a: undefined, b: 'b', c: 'c'}],
+    [withDefineProperty(new Sub(), 'd', 4), {d: 4}],
+    [{a: 'b', toString() {}}, {toString: jestExpect.any(Function)}],
   ]);
 
   testToMatchSnapshots([
     [{a: 'b', c: 'd'}, {e: 'b'}],
-    [{a: 'b', c: 'd'}, {a: 'b!', c: 'd'}],
+    [
+      {a: 'b', c: 'd'},
+      {a: 'b!', c: 'd'},
+    ],
     [{a: 'a', c: 'd'}, {a: jestExpect.any(Number)}],
-    [{a: 'b', t: {x: {r: 'r'}, z: 'z'}}, {a: 'b', t: {z: [3]}}],
+    [
+      {a: 'b', t: {x: {r: 'r'}, z: 'z'}},
+      {a: 'b', t: {z: [3]}},
+    ],
     [{a: 'b', t: {x: {r: 'r'}, z: 'z'}}, {t: {l: {r: 'r'}}}],
     [{a: [3, 4, 5], b: 'b'}, {a: [3, 4, 5, 6]}],
     [{a: [3, 4, 5], b: 'b'}, {a: [3, 4]}],
     [{a: [3, 4, 'v'], b: 'b'}, {a: ['v']}],
     [{a: [3, 4, 5], b: 'b'}, {a: {b: 4}}],
     [{a: [3, 4, 5], b: 'b'}, {a: {b: jestExpect.any(String)}}],
-    [[1, 2], [1, 3]],
+    [
+      [1, 2],
+      [1, 3],
+    ],
     [[0], [-0]],
     [new Set([1, 2]), new Set([2])],
     [new Date('2015-11-30'), new Date('2015-10-10')],
@@ -1667,10 +2194,21 @@ describe('toMatchObject()', () => {
     [{a: [{a: 'a', b: 'b'}]}, {a: [{a: 'c'}]}],
     [{a: 1, b: 1, c: 1, d: {e: {f: 555}}}, {d: {e: {f: 222}}}],
     [{}, {a: undefined}],
-    [[1, 2, 3], [2, 3, 1]],
-    [[1, 2, 3], [1, 2, 2]],
+    [
+      [1, 2, 3],
+      [2, 3, 1],
+    ],
+    [
+      [1, 2, 3],
+      [1, 2, 2],
+    ],
     [new Error('foo'), new Error('bar')],
     [Object.assign(Object.create(null), {a: 'b'}), {c: 'd'}],
+    [
+      {a: 'b', c: 'd', [Symbol.for('jest')]: 'jest'},
+      {a: 'c', [Symbol.for('jest')]: expect.any(String)},
+    ],
+    [{a: 'b'}, {toString: jestExpect.any(Function)}],
   ]);
 
   [

@@ -5,14 +5,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import getType = require('jest-get-type');
+import {getType, isPrimitive} from 'jest-get-type';
 import {
   DIM_COLOR,
   EXPECTED_COLOR,
   MatcherHintOptions,
   RECEIVED_COLOR,
   diff,
-  ensureExpectedIsNumber,
+  ensureExpectedIsNonNegativeInteger,
   ensureNoExpected,
   matcherErrorMessage,
   matcherHint,
@@ -21,8 +21,12 @@ import {
   printWithType,
   stringify,
 } from 'jest-matcher-utils';
-import {MatcherState, MatchersObject, SyncExpectationResult} from './types';
 import {equals} from './jasmineUtils';
+import type {
+  MatcherState,
+  MatchersObject,
+  SyncExpectationResult,
+} from './types';
 import {iterableEquality} from './utils';
 
 // The optional property of matcher context is true if undefined.
@@ -170,12 +174,7 @@ const printExpectedReceivedCallsPositive = (
               difference.includes('+ Received')
             ) {
               // Omit annotation in case multiple args have diff.
-              lines.push(
-                difference
-                  .split('\n')
-                  .slice(3)
-                  .join('\n') + ',',
-              );
+              lines.push(difference.split('\n').slice(3).join('\n') + ',');
               continue;
             }
           }
@@ -279,7 +278,7 @@ const isLineDiffableArg = (expected: unknown, received: unknown): boolean => {
     return false;
   }
 
-  if (getType.isPrimitive(expected)) {
+  if (isPrimitive(expected)) {
     return false;
   }
 
@@ -357,7 +356,7 @@ const printReceivedResults = (
 };
 
 const createToBeCalledMatcher = (matcherName: string) =>
-  function(
+  function (
     this: MatcherState,
     received: any,
     expected: unknown,
@@ -404,7 +403,7 @@ const createToBeCalledMatcher = (matcherName: string) =>
   };
 
 const createToReturnMatcher = (matcherName: string) =>
-  function(
+  function (
     this: MatcherState,
     received: any,
     expected: unknown,
@@ -462,7 +461,7 @@ const createToReturnMatcher = (matcherName: string) =>
   };
 
 const createToBeCalledTimesMatcher = (matcherName: string) =>
-  function(
+  function (
     this: MatcherState,
     received: any,
     expected: number,
@@ -472,7 +471,7 @@ const createToBeCalledTimesMatcher = (matcherName: string) =>
       isNot: this.isNot,
       promise: this.promise,
     };
-    ensureExpectedIsNumber(expected, matcherName, options);
+    ensureExpectedIsNonNegativeInteger(expected, matcherName, options);
     ensureMockOrSpy(received, matcherName, expectedArgument, options);
 
     const receivedIsSpy = isSpy(received);
@@ -498,7 +497,7 @@ const createToBeCalledTimesMatcher = (matcherName: string) =>
   };
 
 const createToReturnTimesMatcher = (matcherName: string) =>
-  function(
+  function (
     this: MatcherState,
     received: any,
     expected: number,
@@ -508,7 +507,7 @@ const createToReturnTimesMatcher = (matcherName: string) =>
       isNot: this.isNot,
       promise: this.promise,
     };
-    ensureExpectedIsNumber(expected, matcherName, options);
+    ensureExpectedIsNonNegativeInteger(expected, matcherName, options);
     ensureMock(received, matcherName, expectedArgument, options);
 
     const receivedName = received.getMockName();
@@ -546,7 +545,7 @@ const createToReturnTimesMatcher = (matcherName: string) =>
   };
 
 const createToBeCalledWithMatcher = (matcherName: string) =>
-  function(
+  function (
     this: MatcherState,
     received: any,
     ...expected: Array<unknown>
@@ -619,7 +618,7 @@ const createToBeCalledWithMatcher = (matcherName: string) =>
   };
 
 const createToReturnWithMatcher = (matcherName: string) =>
-  function(
+  function (
     this: MatcherState,
     received: any,
     expected: unknown,
@@ -692,7 +691,7 @@ const createToReturnWithMatcher = (matcherName: string) =>
   };
 
 const createLastCalledWithMatcher = (matcherName: string) =>
-  function(
+  function (
     this: MatcherState,
     received: any,
     ...expected: Array<unknown>
@@ -775,7 +774,7 @@ const createLastCalledWithMatcher = (matcherName: string) =>
   };
 
 const createLastReturnedMatcher = (matcherName: string) =>
-  function(
+  function (
     this: MatcherState,
     received: any,
     expected: unknown,
@@ -859,7 +858,7 @@ const createLastReturnedMatcher = (matcherName: string) =>
   };
 
 const createNthCalledWithMatcher = (matcherName: string) =>
-  function(
+  function (
     this: MatcherState,
     received: any,
     nth: number,
@@ -989,7 +988,7 @@ const createNthCalledWithMatcher = (matcherName: string) =>
   };
 
 const createNthReturnedWithMatcher = (matcherName: string) =>
-  function(
+  function (
     this: MatcherState,
     received: any,
     nth: number,

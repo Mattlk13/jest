@@ -13,8 +13,8 @@ export type Colors = {
   value: {close: string; open: string};
 };
 type Indent = (arg0: string) => string;
-export type Refs = Array<any>;
-type Print = (arg0: any) => string;
+export type Refs = Array<unknown>;
+type Print = (arg0: unknown) => string;
 
 export type Theme = {
   comment: string;
@@ -41,11 +41,12 @@ export type Options = {
   maxDepth: number;
   min: boolean;
   plugins: Plugins;
+  printBasicPrototype: boolean;
   printFunctionName: boolean;
   theme: Theme;
 };
 
-export type OptionsReceived = {
+export interface PrettyFormatOptions {
   callToJSON?: boolean;
   escapeRegex?: boolean;
   escapeString?: boolean;
@@ -54,9 +55,12 @@ export type OptionsReceived = {
   maxDepth?: number;
   min?: boolean;
   plugins?: Plugins;
+  printBasicPrototype?: boolean;
   printFunctionName?: boolean;
   theme?: ThemeReceived;
-};
+}
+
+export type OptionsReceived = PrettyFormatOptions;
 
 export type Config = {
   callToJSON: boolean;
@@ -67,13 +71,14 @@ export type Config = {
   maxDepth: number;
   min: boolean;
   plugins: Plugins;
+  printBasicPrototype: boolean;
   printFunctionName: boolean;
   spacingInner: string;
   spacingOuter: string;
 };
 
 export type Printer = (
-  val: any,
+  val: unknown,
   config: Config,
   indentation: string,
   depth: number,
@@ -101,9 +106,9 @@ type PluginOptions = {
   spacing: string;
 };
 
-type OldPlugin = {
+export type OldPlugin = {
   print: (
-    val: any,
+    val: unknown,
     print: Print,
     indent: Indent,
     options: PluginOptions,

@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+/* eslint-disable local/prefer-rest-params-eventually */
+
 import prettyFormat from '../';
 
 function returnArguments(..._args: Array<unknown>) {
@@ -14,7 +16,7 @@ function returnArguments(..._args: Array<unknown>) {
 class MyArray<T> extends Array<T> {}
 
 function MyObject(value: unknown) {
-  // @ts-ignore
+  // @ts-expect-error
   this.name = value;
 }
 
@@ -37,6 +39,32 @@ describe('prettyFormat()', () => {
   it('prints an array with items', () => {
     const val = [1, 2, 3];
     expect(prettyFormat(val)).toEqual('Array [\n  1,\n  2,\n  3,\n]');
+  });
+
+  it('prints a sparse array with only holes', () => {
+    // eslint-disable-next-line no-sparse-arrays
+    const val = [, , ,];
+    expect(prettyFormat(val)).toEqual('Array [\n  ,\n  ,\n  ,\n]');
+  });
+
+  it('prints a sparse array with items', () => {
+    // eslint-disable-next-line no-sparse-arrays
+    const val = [1, , , 4];
+    expect(prettyFormat(val)).toEqual('Array [\n  1,\n  ,\n  ,\n  4,\n]');
+  });
+
+  it('prints a sparse array with value surrounded by holes', () => {
+    // eslint-disable-next-line no-sparse-arrays
+    const val = [, 5, ,];
+    expect(prettyFormat(val)).toEqual('Array [\n  ,\n  5,\n  ,\n]');
+  });
+
+  it('prints a sparse array also containing undefined values', () => {
+    // eslint-disable-next-line no-sparse-arrays
+    const val = [1, , undefined, undefined, , 4];
+    expect(prettyFormat(val)).toEqual(
+      'Array [\n  1,\n  ,\n  undefined,\n  undefined,\n  ,\n  4,\n]',
+    );
   });
 
   it('prints a empty typed array', () => {
@@ -85,7 +113,7 @@ describe('prettyFormat()', () => {
     /* eslint-disable no-new-func */
     const val = new Function();
     /* eslint-enable no-new-func */
-    // In Node 8.1.4: val.name === 'anonymous'
+    // In Node >=8.1.4: val.name === 'anonymous'
     expect(prettyFormat(val)).toEqual('[Function anonymous]');
   });
 
@@ -95,7 +123,7 @@ describe('prettyFormat()', () => {
       val = cb;
     }
     f(() => {});
-    // In Node 8.1.4: val.name === ''
+    // In Node >=8.1.4: val.name === ''
     expect(prettyFormat(val)).toEqual('[Function anonymous]');
   });
 
@@ -156,7 +184,7 @@ describe('prettyFormat()', () => {
   });
 
   it('prints a map with non-string keys', () => {
-    const val = new Map<any, any>([
+    const val = new Map<unknown, unknown>([
       [false, 'boolean'],
       ['false', 'string'],
       [0, 'number'],
@@ -280,7 +308,7 @@ describe('prettyFormat()', () => {
   });
 
   it('prints an object without non-enumerable properties which have string key', () => {
-    const val: any = {
+    const val: unknown = {
       enumerable: true,
     };
     const key = 'non-enumerable';
@@ -292,7 +320,7 @@ describe('prettyFormat()', () => {
   });
 
   it('prints an object without non-enumerable properties which have symbol key', () => {
-    const val: any = {
+    const val: unknown = {
       enumerable: true,
     };
     const key = Symbol('non-enumerable');
@@ -496,6 +524,31 @@ describe('prettyFormat()', () => {
     });
   });
 
+  it('can omit basic prototypes', () => {
+    const val = {
+      deeply: {nested: {object: {}}},
+      'empty array': {},
+      'empty object': {},
+      'nested array': [[[]]],
+      'typed array': new Uint8Array(),
+    };
+    expect(prettyFormat(val, {maxDepth: 2, printBasicPrototype: false})).toBe(
+      [
+        '{',
+        '  "deeply": {',
+        '    "nested": [Object],',
+        '  },',
+        '  "empty array": {},',
+        '  "empty object": {},',
+        '  "nested array": [',
+        '    [Array],',
+        '  ],',
+        '  "typed array": Uint8Array [],',
+        '}',
+      ].join('\n'),
+    );
+  });
+
   it('can customize the max depth', () => {
     const val = [
       {
@@ -508,7 +561,7 @@ describe('prettyFormat()', () => {
         'map non-empty': new Map([['name', 'value']]),
         'object literal empty': {},
         'object literal non-empty': {name: 'value'},
-        // @ts-ignore
+        // @ts-expect-error
         'object with constructor': new MyObject('value'),
         'object without constructor': Object.create(null),
         'set empty': new Set(),
@@ -540,7 +593,6 @@ describe('prettyFormat()', () => {
 
   it('throws on invalid options', () => {
     expect(() => {
-      // @ts-ignore
       prettyFormat({}, {invalidOption: true});
     }).toThrow();
   });
@@ -586,7 +638,7 @@ describe('prettyFormat()', () => {
     const options = {
       plugins: [
         {
-          print(val: any) {
+          print(val: unknown) {
             return val;
           },
           test() {
@@ -661,15 +713,18 @@ describe('prettyFormat()', () => {
   });
 
   it('supports plugins with deeply nested arrays (#24)', () => {
-    const val = [[1, 2], [3, 4]];
+    const val = [
+      [1, 2],
+      [3, 4],
+    ];
     expect(
       prettyFormat(val, {
         plugins: [
           {
-            print(val, print) {
-              return val.map((item: any) => print(item)).join(' - ');
+            print(val: Array<unknown>, print: any) {
+              return val.map(item => print(item)).join(' - ');
             },
-            test(val) {
+            test(val: unknown) {
               return Array.isArray(val);
             },
           },
@@ -808,7 +863,7 @@ describe('prettyFormat()', () => {
         'map non-empty': new Map([['name', 'value']]),
         'object literal empty': {},
         'object literal non-empty': {name: 'value'},
-        // @ts-ignore
+        // @ts-expect-error
         'object with constructor': new MyObject('value'),
         'object without constructor': Object.create(null),
         'set empty': new Set(),

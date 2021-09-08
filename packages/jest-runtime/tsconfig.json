@@ -5,10 +5,11 @@
     "outDir": "build"
   },
   "references": [
-    {"path": "../jest-config"},
     {"path": "../jest-console"},
     {"path": "../jest-environment"},
     {"path": "../jest-environment-node"},
+    {"path": "../jest-fake-timers"},
+    {"path": "../jest-globals"},
     {"path": "../jest-haste-map"},
     {"path": "../jest-message-util"},
     {"path": "../jest-mock"},
@@ -16,9 +17,11 @@
     {"path": "../jest-resolve"},
     {"path": "../jest-snapshot"},
     {"path": "../jest-source-map"},
+    {"path": "../jest-test-result"},
+    {"path": "../jest-transform"},
     {"path": "../jest-types"},
     {"path": "../jest-util"},
     {"path": "../jest-validate"},
-    {"path": "../pretty-format"}
+    {"path": "../test-utils"}
   ]
 }
