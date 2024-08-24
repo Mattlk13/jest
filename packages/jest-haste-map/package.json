@@ -32,7 +32,7 @@
     "@types/sane": "^2.0.0"
   },
   "optionalDependencies": {
-    "fsevents": "^1.2.9"
+    "fsevents": "^2.2.1"
   },
   "engines": {
     "node": ">= 8"
